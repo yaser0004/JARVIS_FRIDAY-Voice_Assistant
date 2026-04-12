@@ -1,0 +1,68 @@
+﻿# JARVIS target runtime: Python 3.12.x
+# Default install uses CPU PyTorch from PyPI.
+# For CUDA 11.8, reinstall both packages with:
+#   python -m pip install --upgrade torch==2.3.0+cu118 torchvision==0.18.0+cu118 --index-url https://download.pytorch.org/whl/cu118
+
+# Build / packaging (pin setuptools <71 so pkg_resources stays available for ctranslate2)
+setuptools<71
+
+# Core ML/DL
+scikit-learn==1.7.2
+tensorflow==2.16.1
+tf2onnx==1.16.1
+transformers==4.41.2
+accelerate==0.31.0
+datasets==2.20.0
+optimum[onnxruntime-gpu]==1.20.0
+onnxruntime-gpu==1.18.0
+sentence-transformers==3.0.1
+torch==2.3.0
+torchvision==0.18.0
+optree>=0.9.1,<0.12.0
+
+# NLP
+spacy==3.7.5
+nlpaug==1.1.11
+
+# Speech
+faster-whisper==1.0.3
+ctranslate2==4.5.0
+openwakeword==0.6.0
+kokoro==0.8.4
+sounddevice==0.4.7
+soundfile==0.12.1
+edge-tts==7.2.3
+
+# LLM
+# Requires CMake + MSVC Build Tools on Windows.
+llama-cpp-python==0.3.20
+
+# Vision
+opencv-python==4.10.0.84
+
+# System Control
+pycaw==20240210
+comtypes==1.4.4
+screen-brightness-control==0.22.1
+psutil==5.9.8
+GPUtil==1.4.0
+pygetwindow==0.0.9
+pyautogui==0.9.54
+pygame==2.5.2
+
+# Memory
+chromadb==0.5.3
+
+# UI
+PyQt6==6.7.0
+PyQt6-Qt6==6.7.0
+
+# Utils
+numpy==1.26.4
+pandas==2.2.2
+matplotlib==3.9.0
+joblib==1.4.2
+tqdm==4.66.4
+python-dotenv==1.0.1
+huggingface_hub==0.23.4
+

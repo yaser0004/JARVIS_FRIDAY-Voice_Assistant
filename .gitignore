@@ -1,0 +1,55 @@
+# Python cache and build artifacts
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.so
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+
+# Virtual environments
+.venv/
+venv/
+
+# IDE/editor state
+.vscode/
+.idea/
+
+# Local runtime logs and traces
+logs/
+*.trace.jsonl
+*.log
+
+# Local app/runtime state and temporary scripts
+__copilot_*.py
+
+# Data generated at runtime or for training
+data/captures/
+data/glove/
+data/vision_dataset/cifar-10-python.tar.gz
+data/vision_dataset/train/
+data/vision_dataset/val/
+data/vision_dataset/test/
+data/vision_dataset/cifar-10-batches-py/
+
+# Keep training/evaluation outputs uploadable
+!ml/results/
+!ml/results/**
+
+# Generated / downloaded model artifacts
+ml/models/cnn_vision/
+ml/models/bilstm_saved/
+ml/models/distilbert_intent/
+ml/models/distilbert_onnx/
+ml/models/*.onnx
+ml/models/*.pkl
+models/*.gguf
+models/*.bin
+models/*.safetensors
+
+# Reference-only material not required for runtime
+REFERENCE_ONLY_FOLDER/

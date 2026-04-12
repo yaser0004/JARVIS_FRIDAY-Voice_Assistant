@@ -1,0 +1,35 @@
+QWidget {
+    color: #c8eaf0;
+    background: transparent;
+}
+
+QLineEdit {
+    background: rgba(6, 15, 24, 220);
+    border: 1px solid rgba(0, 245, 255, 46);
+    border-radius: 8px;
+    padding: 8px;
+    color: #c8eaf0;
+    selection-background-color: rgba(0, 245, 255, 60);
+}
+
+QPushButton {
+    background: rgba(0, 184, 200, 30);
+    border: 1px solid rgba(0, 245, 255, 60);
+    border-radius: 8px;
+    padding: 8px 12px;
+}
+
+QPushButton:hover {
+    background: rgba(0, 245, 255, 40);
+}
+
+QComboBox {
+    background: rgba(6, 15, 24, 220);
+    border: 1px solid rgba(0, 245, 255, 46);
+    border-radius: 6px;
+    padding: 6px;
+}
+
+QScrollArea {
+    border: none;
+}

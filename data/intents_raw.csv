@@ -1,0 +1,1771 @@
+text,intent
+would you launch spotify,launch_app
+hey assistant run notepad,launch_app
+launch spotify,launch_app
+please open file explorer,launch_app
+could you open chrome,launch_app
+can you run notepad for me,launch_app
+open file explorer right now,launch_app
+open calculator,launch_app
+open chrome,launch_app
+start vscode,launch_app
+bring up chrome for me,launch_app
+please bring up chrome,launch_app
+launch spotify if you can,launch_app
+open calculator,launch_app
+please boot vscode please,launch_app
+open file explorer if you can,launch_app
+run notepad,launch_app
+open chrome,launch_app
+open calculator,launch_app
+run notepad,launch_app
+fire up spotify if you can,launch_app
+start vscode for me,launch_app
+open calculator,launch_app
+could you launch spotify for me,launch_app
+start vscode if you can,launch_app
+would you open file explorer,launch_app
+can you open chrome,launch_app
+bring up chrome please,launch_app
+run notepad,launch_app
+please bring up chrome,launch_app
+fire up spotify,launch_app
+could you boot vscode,launch_app
+run notepad,launch_app
+open file explorer right now,launch_app
+fire up spotify for me,launch_app
+open file explorer please,launch_app
+could you launch spotify,launch_app
+please fire up spotify right now,launch_app
+do me a favor and boot vscode please,launch_app
+launch spotify,launch_app
+open file explorer,launch_app
+please bring up chrome,launch_app
+start vscode if you can,launch_app
+open file explorer,launch_app
+open file explorer,launch_app
+open calculator,launch_app
+could you open file explorer if you can,launch_app
+do me a favor and start vscode please,launch_app
+bring up chrome please,launch_app
+bring up chrome,launch_app
+could you open calculator,launch_app
+please launch spotify,launch_app
+launch spotify,launch_app
+open file explorer,launch_app
+start vscode,launch_app
+do me a favor and open file explorer,launch_app
+fire up spotify,launch_app
+open file explorer,launch_app
+run notepad,launch_app
+fire up spotify,launch_app
+bring up chrome right now,launch_app
+can you launch spotify,launch_app
+do me a favor and bring up chrome,launch_app
+can you run notepad please,launch_app
+can you open chrome,launch_app
+could you bring up chrome,launch_app
+open calculator,launch_app
+hey assistant run notepad right now,launch_app
+run notepad,launch_app
+can you fire up spotify,launch_app
+fire up spotify right now,launch_app
+boot vscode,launch_app
+open chrome,launch_app
+hey assistant launch spotify,launch_app
+bring up chrome,launch_app
+could you launch spotify,launch_app
+open file explorer right now,launch_app
+start vscode for me,launch_app
+launch spotify please,launch_app
+open chrome,launch_app
+open file explorer,launch_app
+launch spotify,launch_app
+please run notepad,launch_app
+please boot vscode,launch_app
+can you open chrome,launch_app
+fire up spotify right now,launch_app
+open calculator right now,launch_app
+could you start vscode,launch_app
+do me a favor and open chrome please,launch_app
+do me a favor and bring up chrome,launch_app
+do me a favor and boot vscode for me,launch_app
+open chrome,launch_app
+launch spotify,launch_app
+hey assistant launch spotify for me,launch_app
+do me a favor and fire up spotify,launch_app
+can you run notepad please,launch_app
+fire up spotify,launch_app
+open file explorer if you can,launch_app
+run notepad,launch_app
+please bring up chrome,launch_app
+start vscode,launch_app
+open calculator please,launch_app
+open chrome please,launch_app
+do me a favor and launch spotify if you can,launch_app
+start vscode,launch_app
+launch spotify,launch_app
+bring up chrome right now,launch_app
+open file explorer,launch_app
+do me a favor and open file explorer,launch_app
+open calculator,launch_app
+launch spotify,launch_app
+start vscode please,launch_app
+would you open file explorer,launch_app
+run notepad,launch_app
+run notepad,launch_app
+would you open calculator please,launch_app
+would you launch spotify please,launch_app
+open chrome for me,launch_app
+please open calculator,launch_app
+open file explorer,launch_app
+can you open file explorer,launch_app
+would you start vscode for me,launch_app
+would you fire up spotify,launch_app
+bring up chrome,launch_app
+open chrome,launch_app
+run notepad,launch_app
+launch spotify right now,launch_app
+start vscode,launch_app
+run notepad,launch_app
+start vscode,launch_app
+would you open chrome,launch_app
+fire up spotify,launch_app
+run notepad please,launch_app
+fire up spotify,launch_app
+please boot vscode,launch_app
+bring up chrome for me,launch_app
+could you run notepad,launch_app
+fire up spotify please,launch_app
+open calculator right now,launch_app
+open file explorer please,launch_app
+launch spotify,launch_app
+would you open calculator,launch_app
+please open chrome,launch_app
+bring up chrome,launch_app
+bring up chrome please,launch_app
+fire up spotify,launch_app
+run notepad right now,launch_app
+do me a favor and open chrome for me,launch_app
+bring up chrome if you can,launch_app
+bring up chrome,launch_app
+launch spotify,launch_app
+hey assistant open calculator right now,launch_app
+bring up chrome if you can,launch_app
+please open file explorer,launch_app
+fire up spotify,launch_app
+would you start vscode right now,launch_app
+open file explorer,launch_app
+open calculator right now,launch_app
+bring up chrome right now,launch_app
+hey assistant run notepad for me,launch_app
+launch spotify if you can,launch_app
+launch spotify,launch_app
+run notepad,launch_app
+run notepad,launch_app
+could you start vscode,launch_app
+can you boot vscode right now,launch_app
+fire up spotify,launch_app
+run notepad,launch_app
+fire up spotify for me,launch_app
+start vscode,launch_app
+open chrome,launch_app
+launch spotify,launch_app
+hey assistant run notepad,launch_app
+open file explorer for me,launch_app
+launch spotify right now,launch_app
+open file explorer,launch_app
+bring up chrome,launch_app
+hey assistant boot vscode right now,launch_app
+open file explorer for me,launch_app
+boot vscode for me,launch_app
+terminate discord,close_app
+stop notepad for me,close_app
+terminate discord if you can,close_app
+close notepad if you can,close_app
+could you stop notepad,close_app
+close notepad for me,close_app
+please close notepad,close_app
+please shut chrome please,close_app
+close notepad,close_app
+kill spotify,close_app
+close chrome,close_app
+kill spotify if you can,close_app
+terminate discord,close_app
+hey assistant kill spotify for me,close_app
+please close this app,close_app
+would you close this app,close_app
+kill spotify,close_app
+close this app,close_app
+please stop notepad,close_app
+please close chrome,close_app
+exit vscode,close_app
+please exit vscode,close_app
+would you shut chrome,close_app
+shut chrome,close_app
+kill spotify right now,close_app
+terminate discord,close_app
+do me a favor and close this app,close_app
+close chrome,close_app
+can you shut chrome,close_app
+close chrome,close_app
+can you close notepad,close_app
+please exit vscode,close_app
+could you quit spotify right now,close_app
+terminate discord,close_app
+hey assistant exit vscode please,close_app
+exit vscode,close_app
+would you quit spotify right now,close_app
+kill spotify,close_app
+hey assistant close notepad,close_app
+would you close notepad,close_app
+quit spotify,close_app
+close chrome right now,close_app
+hey assistant shut chrome,close_app
+please shut chrome,close_app
+would you close this app,close_app
+close this app,close_app
+do me a favor and kill spotify,close_app
+do me a favor and terminate discord right now,close_app
+close this app if you can,close_app
+shut chrome,close_app
+quit spotify right now,close_app
+close notepad,close_app
+kill spotify right now,close_app
+could you shut chrome,close_app
+shut chrome,close_app
+shut chrome if you can,close_app
+could you stop notepad,close_app
+please quit spotify,close_app
+could you close this app right now,close_app
+close this app please,close_app
+quit spotify right now,close_app
+close notepad if you can,close_app
+would you close this app right now,close_app
+stop notepad right now,close_app
+terminate discord for me,close_app
+quit spotify,close_app
+do me a favor and shut chrome,close_app
+hey assistant exit vscode,close_app
+close this app if you can,close_app
+quit spotify,close_app
+could you terminate discord,close_app
+do me a favor and terminate discord,close_app
+exit vscode please,close_app
+stop notepad for me,close_app
+can you close this app,close_app
+terminate discord right now,close_app
+can you shut chrome,close_app
+terminate discord,close_app
+can you close this app,close_app
+kill spotify please,close_app
+do me a favor and exit vscode,close_app
+could you terminate discord,close_app
+please quit spotify for me,close_app
+stop notepad right now,close_app
+terminate discord,close_app
+kill spotify please,close_app
+quit spotify,close_app
+would you close notepad please,close_app
+do me a favor and exit vscode,close_app
+please quit spotify,close_app
+close this app,close_app
+close this app for me,close_app
+terminate discord,close_app
+could you close this app,close_app
+terminate discord,close_app
+close notepad for me,close_app
+exit vscode,close_app
+could you exit vscode,close_app
+do me a favor and terminate discord if you can,close_app
+hey assistant close this app,close_app
+terminate discord,close_app
+please terminate discord right now,close_app
+please quit spotify if you can,close_app
+could you terminate discord,close_app
+close chrome,close_app
+could you terminate discord right now,close_app
+stop notepad,close_app
+do me a favor and terminate discord,close_app
+please kill spotify please,close_app
+close this app if you can,close_app
+shut chrome,close_app
+exit vscode right now,close_app
+terminate discord,close_app
+kill spotify,close_app
+can you stop notepad,close_app
+shut chrome please,close_app
+kill spotify,close_app
+close chrome,close_app
+stop notepad please,close_app
+do me a favor and close notepad right now,close_app
+google pytorch docs,web_search
+search youtube for python tutorial for me,web_search
+look up latest ai news right now,web_search
+hey assistant google weather in delhi,web_search
+search youtube for python tutorial,web_search
+do me a favor and look up latest ai news right now,web_search
+can you google weather in delhi,web_search
+google pytorch docs,web_search
+find best gpu under 30000 if you can,web_search
+look up cuda setup,web_search
+find internships in ai,web_search
+do me a favor and google pytorch docs,web_search
+find best gpu under 30000 for me,web_search
+google weather in delhi right now,web_search
+search reddit for ai,web_search
+look up cuda setup please,web_search
+look up latest ai news,web_search
+google pytorch docs,web_search
+would you google pytorch docs if you can,web_search
+look up cuda setup,web_search
+find internships in ai if you can,web_search
+search youtube for python tutorial,web_search
+could you search youtube for python tutorial right now,web_search
+search for machine learning roadmap right now,web_search
+find internships in ai for me,web_search
+google pytorch docs,web_search
+do me a favor and find best gpu under 30000 if you can,web_search
+google weather in delhi,web_search
+please google pytorch docs,web_search
+search for machine learning roadmap,web_search
+find internships in ai,web_search
+would you find best gpu under 30000,web_search
+please search reddit for ai please,web_search
+search reddit for ai,web_search
+look up cuda setup if you can,web_search
+google pytorch docs,web_search
+could you search for machine learning roadmap if you can,web_search
+search youtube for python tutorial,web_search
+find internships in ai,web_search
+google weather in delhi if you can,web_search
+can you search for machine learning roadmap,web_search
+look up latest ai news right now,web_search
+please find best gpu under 30000,web_search
+can you find best gpu under 30000,web_search
+could you find internships in ai right now,web_search
+hey assistant find best gpu under 30000,web_search
+look up latest ai news please,web_search
+google pytorch docs,web_search
+please look up cuda setup,web_search
+search reddit for ai,web_search
+please look up latest ai news if you can,web_search
+google pytorch docs,web_search
+search youtube for python tutorial,web_search
+please google pytorch docs,web_search
+hey assistant search reddit for ai if you can,web_search
+search for machine learning roadmap,web_search
+find internships in ai please,web_search
+google pytorch docs,web_search
+look up latest ai news,web_search
+would you search youtube for python tutorial for me,web_search
+hey assistant search youtube for python tutorial for me,web_search
+google weather in delhi,web_search
+search for machine learning roadmap right now,web_search
+hey assistant search for machine learning roadmap for me,web_search
+google weather in delhi,web_search
+search reddit for ai,web_search
+do me a favor and find best gpu under 30000,web_search
+would you search reddit for ai for me,web_search
+look up latest ai news,web_search
+google pytorch docs,web_search
+look up latest ai news,web_search
+search reddit for ai,web_search
+google pytorch docs,web_search
+find best gpu under 30000,web_search
+search youtube for python tutorial,web_search
+find internships in ai,web_search
+look up cuda setup right now,web_search
+search for machine learning roadmap please,web_search
+google pytorch docs if you can,web_search
+find internships in ai,web_search
+could you search reddit for ai,web_search
+do me a favor and google pytorch docs,web_search
+search reddit for ai,web_search
+hey assistant search youtube for python tutorial right now,web_search
+can you look up latest ai news for me,web_search
+search for machine learning roadmap,web_search
+look up latest ai news,web_search
+do me a favor and google weather in delhi,web_search
+find best gpu under 30000 if you can,web_search
+look up cuda setup for me,web_search
+find internships in ai,web_search
+would you google pytorch docs please,web_search
+please search reddit for ai,web_search
+search youtube for python tutorial,web_search
+google weather in delhi,web_search
+hey assistant search reddit for ai if you can,web_search
+search for machine learning roadmap for me,web_search
+google weather in delhi,web_search
+could you google pytorch docs,web_search
+would you search for machine learning roadmap,web_search
+search youtube for python tutorial,web_search
+do me a favor and search youtube for python tutorial,web_search
+could you search youtube for python tutorial if you can,web_search
+find best gpu under 30000,web_search
+search for machine learning roadmap for me,web_search
+could you find best gpu under 30000 please,web_search
+would you search for machine learning roadmap,web_search
+can you search youtube for python tutorial for me,web_search
+hey assistant look up latest ai news,web_search
+hey assistant find internships in ai please,web_search
+google pytorch docs if you can,web_search
+please look up cuda setup for me,web_search
+search for machine learning roadmap,web_search
+look up cuda setup please,web_search
+search for machine learning roadmap,web_search
+find internships in ai please,web_search
+google pytorch docs,web_search
+can you google pytorch docs,web_search
+can you search reddit for ai for me,web_search
+do me a favor and look up latest ai news if you can,web_search
+find internships in ai,web_search
+look up cuda setup right now,web_search
+google weather in delhi,web_search
+google weather in delhi,web_search
+look up cuda setup,web_search
+search youtube for python tutorial for me,web_search
+find internships in ai right now,web_search
+find internships in ai please,web_search
+search reddit for ai if you can,web_search
+search reddit for ai,web_search
+can you google pytorch docs,web_search
+google weather in delhi if you can,web_search
+do me a favor and find best gpu under 30000 if you can,web_search
+google weather in delhi right now,web_search
+search for machine learning roadmap,web_search
+look up latest ai news for me,web_search
+find best gpu under 30000,web_search
+search youtube for python tutorial,web_search
+search reddit for ai,web_search
+would you search reddit for ai,web_search
+search youtube for python tutorial,web_search
+look up cuda setup,web_search
+hey assistant look up cuda setup,web_search
+would you look up latest ai news,web_search
+look up latest ai news,web_search
+could you search reddit for ai,web_search
+hey assistant find internships in ai,web_search
+do me a favor and search for machine learning roadmap,web_search
+search youtube for python tutorial right now,web_search
+would you search reddit for ai,web_search
+search reddit for ai,web_search
+google weather in delhi,web_search
+do me a favor and find best gpu under 30000,web_search
+search for machine learning roadmap,web_search
+look up latest ai news right now,web_search
+please google pytorch docs if you can,web_search
+search youtube for python tutorial,web_search
+google weather in delhi please,web_search
+look up latest ai news,web_search
+would you google pytorch docs please,web_search
+search youtube for python tutorial please,web_search
+could you search for machine learning roadmap,web_search
+find best gpu under 30000,web_search
+look up latest ai news please,web_search
+google pytorch docs,web_search
+do me a favor and find best gpu under 30000,web_search
+hey assistant search youtube for python tutorial if you can,web_search
+google weather in delhi please,web_search
+can you find internships in ai,web_search
+do me a favor and search reddit for ai right now,web_search
+find internships in ai right now,web_search
+search for machine learning roadmap,web_search
+find best gpu under 30000,web_search
+google pytorch docs,web_search
+can you search reddit for ai,web_search
+search youtube for python tutorial right now,web_search
+would you look up cuda setup,web_search
+could you search reddit for ai,web_search
+can you google weather in delhi for me,web_search
+search reddit for ai for me,web_search
+would you visit reddit,open_website
+could you visit reddit,open_website
+hey assistant go to youtube,open_website
+go to kaggle right now,open_website
+open github,open_website
+can you open github,open_website
+go to kaggle if you can,open_website
+would you open stackoverflow please,open_website
+open stackoverflow please,open_website
+open github.com if you can,open_website
+can you go to youtube right now,open_website
+hey assistant go to kaggle please,open_website
+go to kaggle,open_website
+visit reddit right now,open_website
+can you open wikipedia page,open_website
+would you go to kaggle,open_website
+could you go to youtube please,open_website
+visit reddit,open_website
+do me a favor and go to kaggle for me,open_website
+open github if you can,open_website
+visit huggingface if you can,open_website
+open github.com,open_website
+can you open github,open_website
+open wikipedia page,open_website
+open stackoverflow for me,open_website
+hey assistant open github,open_website
+open wikipedia,open_website
+open stackoverflow,open_website
+hey assistant visit huggingface,open_website
+go to youtube right now,open_website
+open github,open_website
+hey assistant open wikipedia page,open_website
+can you visit huggingface if you can,open_website
+could you open stackoverflow,open_website
+open github,open_website
+could you go to kaggle,open_website
+can you open wikipedia,open_website
+open wikipedia page,open_website
+would you open wikipedia page,open_website
+could you open wikipedia for me,open_website
+open wikipedia,open_website
+open wikipedia,open_website
+open github.com for me,open_website
+hey assistant go to kaggle right now,open_website
+would you visit reddit right now,open_website
+visit reddit right now,open_website
+go to kaggle,open_website
+please visit huggingface for me,open_website
+visit reddit,open_website
+open wikipedia,open_website
+would you open github.com please,open_website
+open wikipedia page,open_website
+could you open stackoverflow,open_website
+open stackoverflow for me,open_website
+could you visit huggingface,open_website
+go to kaggle,open_website
+open github.com right now,open_website
+open wikipedia page right now,open_website
+go to youtube please,open_website
+open github,open_website
+open github,open_website
+please open wikipedia,open_website
+open wikipedia,open_website
+go to kaggle please,open_website
+could you go to youtube,open_website
+hey assistant open wikipedia right now,open_website
+go to youtube,open_website
+visit reddit please,open_website
+visit reddit right now,open_website
+please go to youtube,open_website
+do me a favor and open wikipedia page,open_website
+visit reddit,open_website
+open stackoverflow if you can,open_website
+could you visit reddit please,open_website
+open wikipedia page,open_website
+go to youtube,open_website
+do me a favor and open wikipedia page please,open_website
+visit huggingface,open_website
+would you open github.com if you can,open_website
+open github.com please,open_website
+hey assistant open github,open_website
+go to youtube,open_website
+would you open github,open_website
+open wikipedia page for me,open_website
+go to kaggle,open_website
+could you go to kaggle please,open_website
+could you go to kaggle,open_website
+open github.com,open_website
+open github.com if you can,open_website
+open wikipedia page right now,open_website
+hey assistant open stackoverflow,open_website
+visit reddit please,open_website
+open github if you can,open_website
+visit huggingface,open_website
+go to kaggle,open_website
+visit huggingface for me,open_website
+go to kaggle,open_website
+open github,open_website
+open wikipedia page please,open_website
+do me a favor and visit huggingface,open_website
+would you open wikipedia please,open_website
+go to youtube if you can,open_website
+open stackoverflow right now,open_website
+open wikipedia,open_website
+open github if you can,open_website
+visit huggingface please,open_website
+go to youtube,open_website
+visit huggingface for me,open_website
+do me a favor and open github.com,open_website
+can you go to kaggle,open_website
+visit reddit,open_website
+open github please,open_website
+open wikipedia,open_website
+open github please,open_website
+please open wikipedia if you can,open_website
+can you open stackoverflow,open_website
+open github.com,open_website
+do me a favor and go to kaggle please,open_website
+open stackoverflow,open_website
+do me a favor and go to kaggle,open_website
+play relaxing piano music,play_media
+could you next track,play_media
+could you pause the current song,play_media
+skip this track,play_media
+play lofi mix on youtube,play_media
+pause the current song,play_media
+play top hits please,play_media
+would you previous track for me,play_media
+start some music,play_media
+would you start some music for me,play_media
+play lofi mix on youtube,play_media
+please play coding soundtrack,play_media
+play blinding lights on spotify if you can,play_media
+next track,play_media
+can you previous track,play_media
+play lofi mix on youtube right now,play_media
+previous track right now,play_media
+could you pause the current song if you can,play_media
+please play top hits,play_media
+could you play top hits for me,play_media
+play coding soundtrack,play_media
+can you resume the song please,play_media
+could you previous track,play_media
+play shape of you for me,play_media
+pause music playback,play_media
+previous track,play_media
+could you pause the current song,play_media
+play top hits,play_media
+would you play relaxing piano music,play_media
+do me a favor and play chill beats for me,play_media
+play chill beats,play_media
+do me a favor and play shape of you,play_media
+start some music,play_media
+pause music playback,play_media
+can you play chill beats,play_media
+hey assistant play lofi mix on youtube,play_media
+hey assistant play coding soundtrack for me,play_media
+do me a favor and play coding soundtrack please,play_media
+next track,play_media
+previous track if you can,play_media
+hey assistant next track,play_media
+resume the song please,play_media
+please start some music,play_media
+resume the song for me,play_media
+would you pause music playback if you can,play_media
+start some music,play_media
+pause music playback,play_media
+play shape of you,play_media
+would you previous track for me,play_media
+please next track,play_media
+can you start my local playlist,play_media
+play relaxing piano music,play_media
+could you pause the current song for me,play_media
+pause the current song if you can,play_media
+start my local playlist,play_media
+next track,play_media
+next track if you can,play_media
+please next track,play_media
+previous track for me,play_media
+can you start my local playlist please,play_media
+play relaxing piano music right now,play_media
+can you play relaxing piano music right now,play_media
+play shape of you,play_media
+start some music right now,play_media
+can you pause music playback,play_media
+would you play chill beats if you can,play_media
+play lofi mix on youtube right now,play_media
+do me a favor and play coding soundtrack please,play_media
+play shape of you,play_media
+resume the song if you can,play_media
+previous track,play_media
+do me a favor and play coding soundtrack,play_media
+previous track please,play_media
+hey assistant play blinding lights on spotify,play_media
+pause music playback,play_media
+previous track for me,play_media
+pause music playback,play_media
+do me a favor and pause music playback,play_media
+start some music,play_media
+play chill beats right now,play_media
+please start some music please,play_media
+pause music playback please,play_media
+hey assistant resume the song please,play_media
+play chill beats for me,play_media
+please start some music,play_media
+hey assistant play shape of you right now,play_media
+play shape of you,play_media
+hey assistant start my local playlist,play_media
+please play lofi mix on youtube,play_media
+pause music playback right now,play_media
+do me a favor and start some music,play_media
+please play coding soundtrack please,play_media
+could you start some music,play_media
+previous track right now,play_media
+previous track for me,play_media
+next track,play_media
+hey assistant pause music playback if you can,play_media
+play chill beats for me,play_media
+could you play relaxing piano music if you can,play_media
+play coding soundtrack for me,play_media
+start some music,play_media
+pause music playback if you can,play_media
+hey assistant play relaxing piano music,play_media
+previous track right now,play_media
+pause the current song for me,play_media
+hey assistant play relaxing piano music,play_media
+play lofi mix on youtube right now,play_media
+play top hits right now,play_media
+do me a favor and start my local playlist,play_media
+play relaxing piano music,play_media
+start some music please,play_media
+play chill beats,play_media
+hey assistant start my local playlist,play_media
+hey assistant skip this track for me,play_media
+would you play blinding lights on spotify,play_media
+start some music for me,play_media
+play blinding lights on spotify,play_media
+hey assistant skip this track,play_media
+skip this track,play_media
+next track for me,play_media
+play coding soundtrack,play_media
+pause music playback please,play_media
+skip this track,play_media
+do me a favor and play top hits please,play_media
+skip this track,play_media
+resume the song,play_media
+play shape of you,play_media
+play blinding lights on spotify,play_media
+resume the song,play_media
+play shape of you,play_media
+pause the current song,play_media
+would you skip this track,play_media
+would you play chill beats if you can,play_media
+next track,play_media
+could you previous track right now,play_media
+can you play relaxing piano music,play_media
+please pause music playback,play_media
+play top hits for me,play_media
+play blinding lights on spotify,play_media
+play coding soundtrack for me,play_media
+hey assistant play shape of you right now,play_media
+pause the current song if you can,play_media
+play lofi mix on youtube please,play_media
+play shape of you,play_media
+next track for me,play_media
+play blinding lights on spotify for me,play_media
+next track,play_media
+pause music playback please,play_media
+play relaxing piano music,play_media
+hey assistant start some music,play_media
+increase volume for me,system_volume
+set volume to 30,system_volume
+unmute speakers,system_volume
+would you unmute speakers,system_volume
+could you what is the current volume for me,system_volume
+hey assistant increase volume by 5,system_volume
+volume down right now,system_volume
+hey assistant what volume are we on for me,system_volume
+do me a favor and what volume are we on,system_volume
+please what volume are we on,system_volume
+volume up,system_volume
+increase volume,system_volume
+do me a favor and increase volume,system_volume
+do me a favor and volume up,system_volume
+do me a favor and decrease volume,system_volume
+could you increase volume by 5,system_volume
+can you unmute speakers right now,system_volume
+could you what volume are we on,system_volume
+volume up please,system_volume
+volume up if you can,system_volume
+would you unmute speakers,system_volume
+set volume to 50 percent,system_volume
+please volume down,system_volume
+what is the current volume,system_volume
+volume up,system_volume
+increase volume,system_volume
+please increase volume by 5,system_volume
+decrease volume,system_volume
+hey assistant what volume are we on right now,system_volume
+what is the current volume,system_volume
+set volume to 30 right now,system_volume
+hey assistant set volume to 30,system_volume
+would you volume up,system_volume
+do me a favor and increase volume,system_volume
+hey assistant set volume to 30 for me,system_volume
+set volume to 50 percent,system_volume
+set volume to max right now,system_volume
+volume up for me,system_volume
+mute volume for me,system_volume
+hey assistant set volume to max,system_volume
+hey assistant what volume are we on,system_volume
+can you set volume to 30 for me,system_volume
+do me a favor and mute volume,system_volume
+set volume to 50 percent please,system_volume
+mute volume,system_volume
+set volume to 30 for me,system_volume
+what volume are we on,system_volume
+would you set volume to 50 percent,system_volume
+mute volume,system_volume
+do me a favor and unmute speakers if you can,system_volume
+mute volume for me,system_volume
+please set sound to zero if you can,system_volume
+do me a favor and set volume to max,system_volume
+unmute speakers,system_volume
+set sound to zero,system_volume
+volume up if you can,system_volume
+set sound to zero,system_volume
+hey assistant what volume are we on right now,system_volume
+please set volume to 30,system_volume
+decrease volume,system_volume
+could you increase volume by 5,system_volume
+set volume to max,system_volume
+decrease volume,system_volume
+please set volume to 50 percent for me,system_volume
+could you set volume to 30,system_volume
+please what is the current volume if you can,system_volume
+could you increase volume please,system_volume
+set volume to max please,system_volume
+do me a favor and increase volume,system_volume
+unmute speakers,system_volume
+mute volume if you can,system_volume
+set volume to max,system_volume
+could you set volume to 50 percent,system_volume
+please unmute speakers,system_volume
+mute volume,system_volume
+could you unmute speakers,system_volume
+volume up if you can,system_volume
+set volume to 30 if you can,system_volume
+set volume to max right now,system_volume
+hey assistant increase volume by 5,system_volume
+increase volume by 5,system_volume
+what is the current volume,system_volume
+what is the current volume please,system_volume
+volume down,system_volume
+would you unmute speakers,system_volume
+volume up,system_volume
+volume down,system_volume
+would you set volume to max,system_volume
+mute volume for me,system_volume
+hey assistant increase volume by 5 if you can,system_volume
+set volume to max,system_volume
+increase volume by 5,system_volume
+set sound to zero,system_volume
+would you increase volume by 5,system_volume
+do me a favor and decrease volume,system_volume
+do me a favor and increase volume by 5,system_volume
+set sound to zero,system_volume
+can you volume up,system_volume
+can you set sound to zero,system_volume
+hey assistant set volume to 30,system_volume
+could you brightness max,system_brightness
+please set brightness to 40 percent,system_brightness
+hey assistant what is current brightness,system_brightness
+set display to 70 percent,system_brightness
+decrease brightness by 10,system_brightness
+do me a favor and set brightness to 40 percent,system_brightness
+do me a favor and set brightness to 60,system_brightness
+screen brightness low if you can,system_brightness
+hey assistant set brightness to 40 percent right now,system_brightness
+how bright is the screen,system_brightness
+can you decrease brightness,system_brightness
+could you screen brighter,system_brightness
+would you dim the screen if you can,system_brightness
+how bright is the screen if you can,system_brightness
+set brightness to 60 for me,system_brightness
+hey assistant screen brightness low,system_brightness
+increase brightness,system_brightness
+set display to 70 percent,system_brightness
+increase brightness right now,system_brightness
+screen brighter please,system_brightness
+please screen brightness low,system_brightness
+would you set brightness to 60 please,system_brightness
+screen brighter,system_brightness
+hey assistant brightness max,system_brightness
+dim the screen please,system_brightness
+increase brightness,system_brightness
+brightness half,system_brightness
+dim the screen,system_brightness
+decrease brightness,system_brightness
+could you what is current brightness,system_brightness
+hey assistant dim the screen,system_brightness
+set brightness to 60,system_brightness
+could you brightness half,system_brightness
+dim the screen,system_brightness
+set brightness to 60,system_brightness
+screen brighter for me,system_brightness
+how bright is the screen,system_brightness
+hey assistant screen brightness low,system_brightness
+please what is current brightness,system_brightness
+brightness max,system_brightness
+do me a favor and what is current brightness right now,system_brightness
+how bright is the screen if you can,system_brightness
+how bright is the screen,system_brightness
+do me a favor and decrease brightness by 10,system_brightness
+set brightness to 60 right now,system_brightness
+increase brightness,system_brightness
+brightness half,system_brightness
+would you screen brightness low,system_brightness
+decrease brightness for me,system_brightness
+screen brightness low if you can,system_brightness
+would you increase brightness,system_brightness
+decrease brightness by 10 if you can,system_brightness
+could you increase brightness,system_brightness
+set brightness to 60 right now,system_brightness
+would you increase brightness,system_brightness
+do me a favor and screen brighter,system_brightness
+how bright is the screen right now,system_brightness
+set brightness to 40 percent right now,system_brightness
+do me a favor and how bright is the screen,system_brightness
+could you brightness max right now,system_brightness
+would you decrease brightness,system_brightness
+brightness half please,system_brightness
+decrease brightness right now,system_brightness
+brightness half please,system_brightness
+what is current brightness for me,system_brightness
+do me a favor and screen brightness low for me,system_brightness
+would you decrease brightness by 10,system_brightness
+set brightness to 40 percent,system_brightness
+what is current brightness,system_brightness
+set brightness to 60,system_brightness
+what is current brightness right now,system_brightness
+set display to 70 percent,system_brightness
+decrease brightness for me,system_brightness
+decrease brightness by 10 right now,system_brightness
+what is current brightness right now,system_brightness
+dim the screen,system_brightness
+what is current brightness right now,system_brightness
+do me a favor and what is current brightness,system_brightness
+do me a favor and brightness max for me,system_brightness
+set display to 70 percent,system_brightness
+shutdown system,power_control
+turn off pc,power_control
+enable wifi if you can,power_control
+put pc to sleep,power_control
+disable battery saver,power_control
+could you lock my computer if you can,power_control
+please enable battery saver mode,power_control
+do me a favor and enable battery saver,power_control
+do me a favor and reboot machine right now,power_control
+would you lock the workstation,power_control
+can you lock the workstation please,power_control
+disable wifi,power_control
+do me a favor and turn off airplane mode,power_control
+hey assistant restart computer right now,power_control
+turn on airplane mode,power_control
+can you disable battery saver,power_control
+hey assistant turn bluetooth on,power_control
+hey assistant put computer to sleep for me,power_control
+turn off pc right now,power_control
+do me a favor and enable battery saver mode for me,power_control
+turn off airplane mode,power_control
+please reboot machine,power_control
+hey assistant put pc to sleep,power_control
+lock my computer if you can,power_control
+turn off pc,power_control
+put computer to sleep right now,power_control
+hibernate now right now,power_control
+can you turn on airplane mode,power_control
+would you hibernate now,power_control
+could you wifi on now,power_control
+do me a favor and disable wifi for me,power_control
+please turn on airplane mode for me,power_control
+could you enable battery saver right now,power_control
+do me a favor and enable battery saver,power_control
+enable wifi right now,power_control
+could you enable battery saver,power_control
+enable wifi please,power_control
+do me a favor and switch monitor off,power_control
+turn off monitor for me,power_control
+hey assistant turn off pc,power_control
+hey assistant reboot machine if you can,power_control
+wifi off now right now,power_control
+would you switch monitor off,power_control
+hey assistant turn off pc if you can,power_control
+hey assistant wifi off now for me,power_control
+would you turn on airplane mode,power_control
+hey assistant hibernate now,power_control
+please lock my computer for me,power_control
+switch monitor off for me,power_control
+hey assistant reboot machine for me,power_control
+would you lock the workstation,power_control
+please lock my computer,power_control
+would you wifi off now,power_control
+shutdown system for me,power_control
+enable battery saver,power_control
+put computer to sleep,power_control
+disable battery saver,power_control
+disable battery saver,power_control
+turn off pc please,power_control
+could you switch monitor off,power_control
+could you turn bluetooth off,power_control
+lock the workstation right now,power_control
+switch monitor off,power_control
+can you reboot machine please,power_control
+turn bluetooth on,power_control
+can you turn off airplane mode right now,power_control
+please lock the workstation,power_control
+hibernate now,power_control
+wifi on now,power_control
+turn bluetooth off,power_control
+restart computer if you can,power_control
+put pc to sleep please,power_control
+hey assistant disable wifi,power_control
+switch monitor off,power_control
+could you wifi off now for me,power_control
+enable wifi,power_control
+do me a favor and restart computer if you can,power_control
+would you wifi off now if you can,power_control
+do me a favor and turn bluetooth off please,power_control
+lock my computer,power_control
+disable battery saver,power_control
+turn bluetooth on,power_control
+lock my computer,power_control
+hey assistant lock my computer,power_control
+turn on airplane mode,power_control
+enable battery saver mode for me,power_control
+hey assistant switch monitor off right now,power_control
+enable battery saver please,power_control
+would you enable battery saver if you can,power_control
+turn off pc,power_control
+hey assistant turn on airplane mode please,power_control
+hey assistant turn off pc if you can,power_control
+put pc to sleep,power_control
+please enable battery saver,power_control
+enable wifi if you can,power_control
+turn bluetooth off for me,power_control
+switch monitor off,power_control
+turn on airplane mode,power_control
+hey assistant restart computer,power_control
+could you turn off pc,power_control
+open update settings right now,system_settings
+open sound settings,system_settings
+show display settings,system_settings
+would you open privacy settings,system_settings
+open bluetooth settings,system_settings
+hey assistant open privacy settings,system_settings
+please open display panel,system_settings
+open display panel for me,system_settings
+open battery saver settings,system_settings
+could you open airplane settings,system_settings
+do me a favor and open update settings,system_settings
+please open sound settings please,system_settings
+open wifi settings,system_settings
+open bluetooth settings,system_settings
+open battery saver settings,system_settings
+please open update settings,system_settings
+open bluetooth settings,system_settings
+would you open bluetooth settings,system_settings
+could you open privacy settings,system_settings
+open display panel,system_settings
+do me a favor and show display settings,system_settings
+could you open wifi settings right now,system_settings
+open airplane mode settings,system_settings
+open display panel,system_settings
+please open battery saver settings for me,system_settings
+open bluetooth settings,system_settings
+show display settings,system_settings
+open battery settings,system_settings
+open airplane mode settings,system_settings
+open airplane mode settings,system_settings
+open sound settings please,system_settings
+do me a favor and open sound settings if you can,system_settings
+hey assistant open airplane settings,system_settings
+do me a favor and open privacy settings,system_settings
+please take me to app settings,system_settings
+could you open privacy settings right now,system_settings
+please open battery saver settings,system_settings
+do me a favor and open display panel please,system_settings
+open airplane mode settings,system_settings
+show display settings right now,system_settings
+could you open airplane mode settings right now,system_settings
+can you open bluetooth settings,system_settings
+open wifi settings please,system_settings
+open wifi settings,system_settings
+hey assistant open battery saver settings right now,system_settings
+open battery saver settings,system_settings
+do me a favor and open bluetooth settings for me,system_settings
+can you open privacy settings,system_settings
+take me to app settings,system_settings
+please show display settings please,system_settings
+open privacy settings,system_settings
+open airplane settings,system_settings
+can you open sound settings,system_settings
+do me a favor and open battery saver settings,system_settings
+hey assistant open battery settings,system_settings
+open airplane settings,system_settings
+hey assistant show display settings,system_settings
+show display settings,system_settings
+show display settings if you can,system_settings
+hey assistant take me to app settings if you can,system_settings
+show display settings if you can,system_settings
+open airplane settings,system_settings
+open wifi settings right now,system_settings
+would you open privacy settings please,system_settings
+open update settings if you can,system_settings
+open wifi settings for me,system_settings
+can you open airplane mode settings,system_settings
+open battery settings,system_settings
+do me a favor and open bluetooth settings,system_settings
+can you open wifi settings,system_settings
+would you open sound settings,system_settings
+open battery saver settings,system_settings
+show display settings,system_settings
+hey assistant open wifi settings right now,system_settings
+open sound settings right now,system_settings
+open airplane settings please,system_settings
+open battery settings please,system_settings
+do me a favor and show display settings,system_settings
+open wifi settings,system_settings
+open bluetooth settings,system_settings
+what is the distance between earth and moon if you can,general_qa
+please how many continents are there,general_qa
+what is reinforcement learning if you can,general_qa
+define precision recall,general_qa
+please what is the purpose of a firewall if you can,general_qa
+define precision recall,general_qa
+how does bluetooth pairing work,general_qa
+what is the purpose of a firewall,general_qa
+how does bluetooth pairing work,general_qa
+please how much is 15 percent of 200,general_qa
+would you what is reinforcement learning,general_qa
+how do i improve focus while studying,general_qa
+what is reinforcement learning,general_qa
+what is reinforcement learning,general_qa
+why do we need sleep,general_qa
+what is the purpose of a firewall for me,general_qa
+explain gradient descent,general_qa
+what does airplane mode do please,general_qa
+how much is 15 percent of 200,general_qa
+could you why is the sky blue,general_qa
+hey assistant what is the distance between earth and moon if you can,general_qa
+how does gps work,general_qa
+do me a favor and why is the sky blue for me,general_qa
+how do i improve focus while studying,general_qa
+can you why is the sky blue right now,general_qa
+what are signs of cpu overheating,general_qa
+what is two factor authentication if you can,general_qa
+what is a secure password if you can,general_qa
+how many continents are there for me,general_qa
+why is the sky blue,general_qa
+how much is 15 percent of 200,general_qa
+can you define precision recall,general_qa
+what is the difference between ram and storage if you can,general_qa
+would you what does airplane mode do,general_qa
+would you how does bluetooth pairing work,general_qa
+how does gps work please,general_qa
+hey assistant why is the sky blue,general_qa
+what is the capital of japan,general_qa
+could you why is my internet unstable if you can,general_qa
+could you how much is 15 percent of 200,general_qa
+what is the speed of light please,general_qa
+what are signs of cpu overheating for me,general_qa
+what is reinforcement learning,general_qa
+what is the distance between earth and moon for me,general_qa
+what causes earthquakes for me,general_qa
+could you what causes earthquakes,general_qa
+please how much is 15 percent of 200,general_qa
+what is the speed of light,general_qa
+do me a favor and how do i improve focus while studying,general_qa
+who wrote pride and prejudice,general_qa
+can you why is the sky blue,general_qa
+why does my laptop fan run loudly,general_qa
+how does gps work,general_qa
+why is the sky blue,general_qa
+is seven a prime number,general_qa
+please what causes earthquakes,general_qa
+do me a favor and how does photosynthesis work,general_qa
+what does airplane mode do,general_qa
+why do we need sleep right now,general_qa
+what are signs of cpu overheating if you can,general_qa
+why does my laptop fan run loudly,general_qa
+who wrote pride and prejudice for me,general_qa
+do me a favor and how does photosynthesis work for me,general_qa
+how do i improve focus while studying right now,general_qa
+what is f1 score please,general_qa
+who wrote pride and prejudice right now,general_qa
+do me a favor and why does my laptop fan run loudly for me,general_qa
+how do i improve focus while studying,general_qa
+what is f1 score,general_qa
+why do we need sleep,general_qa
+what is the speed of light right now,general_qa
+what is the speed of light,general_qa
+explain gradient descent if you can,general_qa
+do me a favor and what is the difference between ram and storage,general_qa
+would you what is two factor authentication,general_qa
+how does photosynthesis work,general_qa
+do me a favor and what is cloud computing for me,general_qa
+hey assistant what is the difference between ram and storage,general_qa
+what is two factor authentication please,general_qa
+how does bluetooth pairing work,general_qa
+please what is two factor authentication if you can,general_qa
+is seven a prime number,general_qa
+do me a favor and what is the difference between ram and storage,general_qa
+how many continents are there,general_qa
+why is my internet unstable please,general_qa
+why is my internet unstable,general_qa
+do me a favor and define precision recall for me,general_qa
+is seven a prime number,general_qa
+could you what is cloud computing right now,general_qa
+could you how does photosynthesis work,general_qa
+do me a favor and what is overfitting,general_qa
+do me a favor and what is cloud computing,general_qa
+why does my laptop fan run loudly,general_qa
+how many continents are there,general_qa
+what is a secure password,general_qa
+could you how many continents are there,general_qa
+define precision recall,general_qa
+how much is 15 percent of 200,general_qa
+would you what is the distance between earth and moon please,general_qa
+what is the speed of light,general_qa
+what are signs of cpu overheating please,general_qa
+how many continents are there for me,general_qa
+what is the difference between ram and storage,general_qa
+what does airplane mode do,general_qa
+could you what is cloud computing if you can,general_qa
+what is two factor authentication,general_qa
+would you is seven a prime number,general_qa
+what is the purpose of a firewall,general_qa
+can you how much is 15 percent of 200,general_qa
+why is my internet unstable,general_qa
+why do we need sleep,general_qa
+how does bluetooth pairing work,general_qa
+would you how does photosynthesis work,general_qa
+what is a secure password,general_qa
+can you what is two factor authentication right now,general_qa
+how much is 15 percent of 200 please,general_qa
+what is two factor authentication if you can,general_qa
+can you what is the difference between ram and storage if you can,general_qa
+could you how does gps work,general_qa
+what is two factor authentication,general_qa
+what is the speed of light please,general_qa
+please what is the purpose of a firewall,general_qa
+how does gps work,general_qa
+what is the difference between ram and storage,general_qa
+what is cloud computing,general_qa
+can you what is the speed of light right now,general_qa
+what is a secure password,general_qa
+how do i improve focus while studying,general_qa
+can you what is two factor authentication,general_qa
+what is a secure password,general_qa
+would you what is the capital of japan,general_qa
+could you what causes earthquakes,general_qa
+can you why do we need sleep,general_qa
+what is f1 score,general_qa
+why is the sky blue right now,general_qa
+hey assistant why is my internet unstable,general_qa
+please what is the difference between ram and storage for me,general_qa
+could you how does photosynthesis work,general_qa
+why does my laptop fan run loudly if you can,general_qa
+what are signs of cpu overheating for me,general_qa
+do me a favor and what causes earthquakes,general_qa
+what is f1 score,general_qa
+can you how much is 15 percent of 200,general_qa
+hey assistant what does airplane mode do,general_qa
+could you how do i improve focus while studying please,general_qa
+hey assistant what is reinforcement learning,general_qa
+what is the capital of japan,general_qa
+what is cloud computing,general_qa
+what is the capital of japan,general_qa
+what is cloud computing if you can,general_qa
+please why is the sky blue for me,general_qa
+what is the speed of light,general_qa
+can you what is the speed of light,general_qa
+who wrote pride and prejudice if you can,general_qa
+what is two factor authentication,general_qa
+hey assistant define precision recall,general_qa
+hey assistant what are signs of cpu overheating,general_qa
+what is the speed of light,general_qa
+what does airplane mode do,general_qa
+can you define precision recall,general_qa
+is seven a prime number right now,general_qa
+what is f1 score,general_qa
+could you what is cloud computing right now,general_qa
+hey assistant what is the capital of japan,general_qa
+do me a favor and how does photosynthesis work for me,general_qa
+what causes earthquakes,general_qa
+could you how does gps work,general_qa
+why does my laptop fan run loudly,general_qa
+can you how much is 15 percent of 200,general_qa
+what are signs of cpu overheating for me,general_qa
+would you is seven a prime number please,general_qa
+why is the sky blue right now,general_qa
+what is f1 score if you can,general_qa
+explain gradient descent please,general_qa
+what is a secure password,general_qa
+please define precision recall please,general_qa
+do me a favor and what does airplane mode do,general_qa
+can you define precision recall please,general_qa
+define precision recall,general_qa
+what is a secure password if you can,general_qa
+what does airplane mode do right now,general_qa
+can you define precision recall for me,general_qa
+who wrote pride and prejudice right now,general_qa
+how does photosynthesis work if you can,general_qa
+hey assistant why is my internet unstable,general_qa
+what is cloud computing,general_qa
+would you what is the speed of light,general_qa
+what is the capital of japan right now,general_qa
+what is the distance between earth and moon,general_qa
+what causes earthquakes,general_qa
+hey assistant what is two factor authentication,general_qa
+how does gps work,general_qa
+how many continents are there right now,general_qa
+could you what is overfitting right now,general_qa
+why does my laptop fan run loudly,general_qa
+what does airplane mode do,general_qa
+would you how does bluetooth pairing work please,general_qa
+explain gradient descent,general_qa
+why is the sky blue right now,general_qa
+how much is 15 percent of 200,general_qa
+explain gradient descent,general_qa
+could you what is reinforcement learning,general_qa
+can you is seven a prime number,general_qa
+would you how does gps work,general_qa
+would you why is my internet unstable,general_qa
+is seven a prime number right now,general_qa
+how do i improve focus while studying,general_qa
+would you what are signs of cpu overheating,general_qa
+could you what is cloud computing right now,general_qa
+would you define precision recall for me,general_qa
+is seven a prime number,general_qa
+what is the purpose of a firewall,general_qa
+why is the sky blue right now,general_qa
+do me a favor and how does photosynthesis work,general_qa
+how does bluetooth pairing work,general_qa
+could you what is the distance between earth and moon,general_qa
+hey assistant what are signs of cpu overheating,general_qa
+hey assistant what does airplane mode do please,general_qa
+what is cloud computing,general_qa
+can you how do i improve focus while studying,general_qa
+what is two factor authentication if you can,general_qa
+why is my internet unstable,general_qa
+how do i improve focus while studying right now,general_qa
+what is the distance between earth and moon if you can,general_qa
+why does my laptop fan run loudly right now,general_qa
+do me a favor and define precision recall,general_qa
+what are signs of cpu overheating,general_qa
+is seven a prime number if you can,general_qa
+what is the capital of japan,general_qa
+would you what is cloud computing,general_qa
+how do i improve focus while studying if you can,general_qa
+who wrote pride and prejudice,general_qa
+how do i improve focus while studying for me,general_qa
+explain gradient descent,general_qa
+how does photosynthesis work,general_qa
+what is a secure password,general_qa
+why do we need sleep,general_qa
+can you what are signs of cpu overheating,general_qa
+how do i improve focus while studying if you can,general_qa
+who wrote pride and prejudice,general_qa
+why do we need sleep please,general_qa
+define precision recall,general_qa
+define precision recall,general_qa
+how many continents are there,general_qa
+what is two factor authentication,general_qa
+how do i improve focus while studying,general_qa
+what are signs of cpu overheating if you can,general_qa
+hey assistant what is the distance between earth and moon,general_qa
+can you what is f1 score,general_qa
+would you what is cloud computing,general_qa
+what is the purpose of a firewall,general_qa
+how does bluetooth pairing work,general_qa
+what are signs of cpu overheating,general_qa
+would you how do i improve focus while studying,general_qa
+what is two factor authentication,general_qa
+what is the capital of japan if you can,general_qa
+what is the speed of light if you can,general_qa
+how does gps work,general_qa
+hey assistant what is cloud computing,general_qa
+do me a favor and define precision recall please,general_qa
+what is cloud computing,general_qa
+hey assistant explain gradient descent,general_qa
+please why do we need sleep please,general_qa
+what is the distance between earth and moon,general_qa
+how much is 15 percent of 200,general_qa
+how many continents are there right now,general_qa
+how much is 15 percent of 200 for me,general_qa
+would you how does bluetooth pairing work,general_qa
+how do i improve focus while studying,general_qa
+can you how many continents are there right now,general_qa
+could you who wrote pride and prejudice,general_qa
+define precision recall,general_qa
+what is cloud computing,general_qa
+do me a favor and how does bluetooth pairing work,general_qa
+please what does airplane mode do right now,general_qa
+what is cloud computing please,general_qa
+would you what is f1 score,general_qa
+what is reinforcement learning,general_qa
+how does bluetooth pairing work,general_qa
+can you why does my laptop fan run loudly,general_qa
+how do i improve focus while studying,general_qa
+what is two factor authentication,general_qa
+what is the speed of light please,general_qa
+would you why do we need sleep for me,general_qa
+why is the sky blue,general_qa
+what is the capital of japan,general_qa
+how does gps work,general_qa
+please what is overfitting for me,general_qa
+how many continents are there,general_qa
+what is cloud computing for me,general_qa
+what is the difference between ram and storage,general_qa
+what is a secure password for me,general_qa
+what is two factor authentication,general_qa
+can you how much is 15 percent of 200,general_qa
+can you define precision recall if you can,general_qa
+why is my internet unstable,general_qa
+how does photosynthesis work if you can,general_qa
+can you how does bluetooth pairing work please,general_qa
+can you what are signs of cpu overheating,general_qa
+how does photosynthesis work,general_qa
+what does airplane mode do please,general_qa
+what is f1 score for me,general_qa
+why does my laptop fan run loudly,general_qa
+please how do i improve focus while studying,general_qa
+do me a favor and what are signs of cpu overheating,general_qa
+hey assistant who wrote pride and prejudice for me,general_qa
+what does airplane mode do,general_qa
+do me a favor and what causes earthquakes please,general_qa
+can you what is the capital of japan,general_qa
+could you what is cloud computing,general_qa
+how does bluetooth pairing work for me,general_qa
+what is the speed of light,general_qa
+do me a favor and what is the capital of japan,general_qa
+what is cloud computing,general_qa
+why is my internet unstable,general_qa
+can you how many continents are there,general_qa
+can you what are signs of cpu overheating,general_qa
+please is seven a prime number for me,general_qa
+why is the sky blue,general_qa
+why is the sky blue,general_qa
+describe this image,vision_query
+would you analyze this picture,vision_query
+read the text on screen please,vision_query
+what do you see,vision_query
+read the text on screen if you can,vision_query
+analyze camera snapshot,vision_query
+describe this image,vision_query
+could you what is on my screen,vision_query
+would you analyze this picture if you can,vision_query
+scan my display,vision_query
+read the text on screen,vision_query
+describe this image if you can,vision_query
+please what do you see,vision_query
+scan my display right now,vision_query
+inspect this image file,vision_query
+recognize objects from camera for me,vision_query
+hey assistant describe this image,vision_query
+what is on my screen,vision_query
+do me a favor and what do you see,vision_query
+scan my display,vision_query
+analyze this picture right now,vision_query
+recognize objects from camera please,vision_query
+analyze this picture,vision_query
+inspect this image file,vision_query
+what do you see right now,vision_query
+describe this image,vision_query
+would you scan my display,vision_query
+analyze this picture for me,vision_query
+analyze this picture,vision_query
+hey assistant describe what is visible please,vision_query
+analyze camera snapshot,vision_query
+analyze the webcam view right now,vision_query
+what do you see,vision_query
+describe what is visible,vision_query
+hey assistant read the current screen,vision_query
+please what do you see right now,vision_query
+please what do you see,vision_query
+would you analyze image from file,vision_query
+do me a favor and what is on my screen right now,vision_query
+analyze camera snapshot,vision_query
+describe this image right now,vision_query
+describe this image,vision_query
+scan my display right now,vision_query
+inspect this image file,vision_query
+describe this image please,vision_query
+can you describe what is visible if you can,vision_query
+hey assistant describe what is visible right now,vision_query
+analyze image from file please,vision_query
+analyze the webcam view,vision_query
+do me a favor and analyze image from file right now,vision_query
+inspect this image file,vision_query
+inspect this image file please,vision_query
+recognize objects from camera,vision_query
+what is on my screen if you can,vision_query
+hey assistant describe what is visible please,vision_query
+what is on my screen,vision_query
+hey assistant scan my display,vision_query
+inspect this image file,vision_query
+describe this image for me,vision_query
+please analyze the webcam view,vision_query
+analyze the webcam view for me,vision_query
+inspect this image file right now,vision_query
+what is on my screen,vision_query
+please analyze this picture right now,vision_query
+do me a favor and analyze this picture for me,vision_query
+hey assistant scan my display,vision_query
+please what is on my screen right now,vision_query
+describe what is visible,vision_query
+what do you see,vision_query
+what do you see,vision_query
+hey assistant what do you see,vision_query
+would you read the current screen right now,vision_query
+analyze camera snapshot,vision_query
+inspect this image file,vision_query
+read the text on screen if you can,vision_query
+read the text on screen for me,vision_query
+what do you see if you can,vision_query
+would you inspect this image file for me,vision_query
+hey assistant analyze the webcam view,vision_query
+read the text on screen,vision_query
+hey assistant analyze this picture,vision_query
+analyze this picture,vision_query
+hey assistant what do you see if you can,vision_query
+would you inspect this image file,vision_query
+describe what is visible right now,vision_query
+analyze this picture,vision_query
+describe what is visible right now,vision_query
+can you recognize objects from camera,vision_query
+what is on my screen please,vision_query
+would you analyze this picture,vision_query
+recognize objects from camera,vision_query
+read the text on screen,vision_query
+what do you see,vision_query
+inspect this image file,vision_query
+analyze the webcam view,vision_query
+what is on my screen right now,vision_query
+hey assistant describe this image for me,vision_query
+please inspect this image file for me,vision_query
+describe what is visible,vision_query
+recognize objects from camera,vision_query
+open my project report,file_control
+find the budget sheet if you can,file_control
+hey assistant read the markdown file,file_control
+please search for resume docx,file_control
+open downloads folder,file_control
+open my documents,file_control
+read the markdown file,file_control
+open downloads folder,file_control
+open downloads folder for me,file_control
+could you find assignment pdf,file_control
+can you read the markdown file,file_control
+find the budget sheet if you can,file_control
+would you read notes file,file_control
+open my project report for me,file_control
+would you open my project report,file_control
+open my project report,file_control
+search for resume docx if you can,file_control
+find assignment pdf,file_control
+could you open my documents please,file_control
+do me a favor and read the markdown file,file_control
+read the markdown file if you can,file_control
+open downloads folder,file_control
+open my documents if you can,file_control
+open downloads folder,file_control
+read the markdown file please,file_control
+find assignment pdf,file_control
+hey assistant locate project file,file_control
+open downloads folder,file_control
+open my documents please,file_control
+find the budget sheet if you can,file_control
+open my project report,file_control
+do me a favor and open my documents right now,file_control
+hey assistant locate project file,file_control
+open downloads folder please,file_control
+do me a favor and find assignment pdf,file_control
+can you read the markdown file,file_control
+open downloads folder,file_control
+open downloads folder,file_control
+find the budget sheet,file_control
+hey assistant open downloads folder right now,file_control
+find assignment pdf,file_control
+hey assistant read notes file,file_control
+can you open my documents,file_control
+would you open my project report,file_control
+could you read the markdown file,file_control
+search for resume docx right now,file_control
+find the budget sheet please,file_control
+find the budget sheet,file_control
+hey assistant read the markdown file,file_control
+find assignment pdf,file_control
+open my project report,file_control
+find assignment pdf please,file_control
+search for resume docx,file_control
+would you search for resume docx right now,file_control
+find the budget sheet please,file_control
+could you locate project file,file_control
+read notes file,file_control
+read the markdown file for me,file_control
+search for resume docx,file_control
+open my documents,file_control
+do me a favor and open my project report for me,file_control
+do me a favor and find assignment pdf,file_control
+can you find the budget sheet if you can,file_control
+open downloads folder,file_control
+hey assistant open my documents,file_control
+could you read the markdown file,file_control
+would you open downloads folder for me,file_control
+do me a favor and find assignment pdf,file_control
+open my project report,file_control
+read the markdown file please,file_control
+search for resume docx,file_control
+hey assistant search for resume docx,file_control
+locate project file,file_control
+hey assistant open my documents,file_control
+do me a favor and open downloads folder,file_control
+find assignment pdf,file_control
+open my documents if you can,file_control
+search for resume docx,file_control
+would you read notes file if you can,file_control
+would you find the budget sheet,file_control
+open downloads folder,file_control
+find the budget sheet if you can,file_control
+read notes file,file_control
+open my documents,file_control
+locate project file if you can,file_control
+could you locate project file please,file_control
+search for resume docx,file_control
+read notes file,file_control
+open downloads folder please,file_control
+find assignment pdf,file_control
+do me a favor and read the markdown file right now,file_control
+open downloads folder,file_control
+read the markdown file right now,file_control
+read notes file for me,file_control
+do me a favor and search for resume docx,file_control
+would you read the markdown file,file_control
+could you read the markdown file,file_control
+read notes file,file_control
+read notes file for me,file_control
+read notes file,file_control
+paste clipboard content,clipboard_action
+please read clipboard,clipboard_action
+would you what is in clipboard,clipboard_action
+could you what is in clipboard,clipboard_action
+save to clipboard,clipboard_action
+show clipboard text right now,clipboard_action
+hey assistant read clipboard,clipboard_action
+do me a favor and show clipboard text,clipboard_action
+save this to clipboard,clipboard_action
+do me a favor and save this to clipboard for me,clipboard_action
+copy this sentence,clipboard_action
+can you show clipboard text if you can,clipboard_action
+copy this sentence,clipboard_action
+would you what is in clipboard if you can,clipboard_action
+paste clipboard content,clipboard_action
+could you read clipboard right now,clipboard_action
+do me a favor and paste from clipboard,clipboard_action
+could you save this to clipboard,clipboard_action
+paste from clipboard please,clipboard_action
+what is in clipboard if you can,clipboard_action
+copy this text right now,clipboard_action
+could you paste clipboard content,clipboard_action
+can you copy this sentence,clipboard_action
+could you paste from clipboard for me,clipboard_action
+do me a favor and save to clipboard,clipboard_action
+would you paste from clipboard,clipboard_action
+please paste from clipboard please,clipboard_action
+save this to clipboard,clipboard_action
+what is in clipboard right now,clipboard_action
+please paste clipboard content,clipboard_action
+paste from clipboard,clipboard_action
+do me a favor and paste from clipboard if you can,clipboard_action
+paste from clipboard,clipboard_action
+show clipboard text,clipboard_action
+please copy this text,clipboard_action
+could you paste from clipboard,clipboard_action
+save to clipboard,clipboard_action
+save to clipboard,clipboard_action
+could you paste from clipboard right now,clipboard_action
+read clipboard,clipboard_action
+can you save to clipboard please,clipboard_action
+paste clipboard content,clipboard_action
+save to clipboard,clipboard_action
+would you copy this sentence please,clipboard_action
+save to clipboard right now,clipboard_action
+copy this sentence please,clipboard_action
+please copy this sentence,clipboard_action
+what is in clipboard,clipboard_action
+copy this text right now,clipboard_action
+hey assistant save this to clipboard,clipboard_action
+can you read clipboard please,clipboard_action
+copy this sentence,clipboard_action
+show clipboard text please,clipboard_action
+paste from clipboard if you can,clipboard_action
+save this to clipboard,clipboard_action
+do me a favor and copy this sentence if you can,clipboard_action
+copy this sentence,clipboard_action
+do me a favor and copy this sentence right now,clipboard_action
+paste from clipboard right now,clipboard_action
+save this to clipboard,clipboard_action
+abort,stop_cancel
+drop it,stop_cancel
+cancel that,stop_cancel
+stop listening,stop_cancel
+do me a favor and never mind,stop_cancel
+drop it,stop_cancel
+hey assistant cancel operation please,stop_cancel
+never mind please,stop_cancel
+cancel that,stop_cancel
+stop listening,stop_cancel
+would you drop it,stop_cancel
+be quiet please,stop_cancel
+drop it,stop_cancel
+do me a favor and drop it if you can,stop_cancel
+stop,stop_cancel
+please never mind please,stop_cancel
+be quiet,stop_cancel
+cancel operation please,stop_cancel
+could you cancel operation for me,stop_cancel
+stop please,stop_cancel
+would you never mind,stop_cancel
+drop it right now,stop_cancel
+do me a favor and drop it please,stop_cancel
+cancel that,stop_cancel
+cancel operation if you can,stop_cancel
+abort,stop_cancel
+could you forget it,stop_cancel
+stop listening,stop_cancel
+stop right now,stop_cancel
+can you cancel operation,stop_cancel
+cancel operation please,stop_cancel
+cancel operation,stop_cancel
+cancel operation,stop_cancel
+forget it,stop_cancel
+could you drop it if you can,stop_cancel
+stop listening,stop_cancel
+stop if you can,stop_cancel
+cancel that for me,stop_cancel
+be quiet,stop_cancel
+drop it,stop_cancel
+hey assistant cancel operation if you can,stop_cancel
+be quiet right now,stop_cancel
+could you abort,stop_cancel
+stop listening for me,stop_cancel
+hey assistant forget it,stop_cancel
+be quiet for me,stop_cancel
+be quiet,stop_cancel
+could you forget it,stop_cancel
+be quiet,stop_cancel
+can you abort,stop_cancel
+cancel that,stop_cancel
+do me a favor and stop listening please,stop_cancel
+stop listening if you can,stop_cancel
+stop listening,stop_cancel
+forget it if you can,stop_cancel
+do me a favor and drop it,stop_cancel
+please never mind,stop_cancel
+stop listening,stop_cancel
+please stop for me,stop_cancel
+stop listening,stop_cancel
+cancel operation please,stop_cancel
+stop,stop_cancel
+would you drop it if you can,stop_cancel
+would you forget it,stop_cancel
+be quiet if you can,stop_cancel
+please abort,stop_cancel
+be quiet if you can,stop_cancel
+abort,stop_cancel
+forget it for me,stop_cancel
+be quiet,stop_cancel
+forget it,stop_cancel
+cancel operation right now,stop_cancel
+hey assistant be quiet,stop_cancel
+never mind please,stop_cancel
+never mind for me,stop_cancel
+would you cancel operation right now,stop_cancel
+forget it please,stop_cancel
+could you drop it,stop_cancel
+would you stop,stop_cancel
+stop listening,stop_cancel
