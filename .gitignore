@@ -10,24 +10,43 @@ __pycache__/
 .ruff_cache/
 .coverage
 coverage.xml
+dist/
+build/
+*.egg
 
 # Virtual environments
 .venv/
 venv/
+env/
+ENV/
 
 # IDE/editor state
 .vscode/
 .idea/
+*.swp
+*.swo
+*~
+.DS_Store
 
-# Local runtime logs and traces
+# Local runtime logs and traces (sensitive execution data)
 logs/
 *.trace.jsonl
 *.log
+*.tmp
 
-# Local app/runtime state and temporary scripts
+# Test reports and captures (can contain sensitive screenshots)
+qa/test_reports/
+qa/data/captures/
+qa/**/*.png
+qa/**/*.jpg
+qa/**/*.jpeg
+
+# Local app/runtime scripts (generated/temporary)
 __copilot_*.py
+*.cache
+.pytest_cache/
 
-# Data generated at runtime or for training
+# Data generated at runtime or for training (sensitive/large)
 data/captures/
 data/glove/
 data/vision_dataset/cifar-10-python.tar.gz
@@ -36,20 +55,42 @@ data/vision_dataset/val/
 data/vision_dataset/test/
 data/vision_dataset/cifar-10-batches-py/
 
-# Keep training/evaluation outputs uploadable
-!ml/results/
-!ml/results/**
+# Persistent memory/session data
+memory/
+.session/
 
-# Generated / downloaded model artifacts
+# Downloaded/compiled model artifacts (large binary files)
+models/**/*.gguf
+models/**/*.bin
+models/**/*.safetensors
+models/**/*.onnx
+models/**/*.pkl
 ml/models/cnn_vision/
 ml/models/bilstm_saved/
 ml/models/distilbert_intent/
 ml/models/distilbert_onnx/
-ml/models/*.onnx
-ml/models/*.pkl
-models/*.gguf
-models/*.bin
-models/*.safetensors
+ml/models/**/*.onnx
+ml/models/**/*.pkl
+
+# Embedded repositories / submodules
+openclaw/
+
+# Environment-specific configuration
+.env
+.env.local
+.env.*.local
+config.local.yaml
 
 # Reference-only material not required for runtime
 REFERENCE_ONLY_FOLDER/
+
+# OS-specific files
+Thumbs.db
+.DS_Store
+
+# Keep essential files and directories
+!.github/
+!.github/**
+!ml/results/
+!qa/ui_torture_test.py
+!qa/full_system_tester.py
