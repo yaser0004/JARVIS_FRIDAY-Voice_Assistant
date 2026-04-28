@@ -47,19 +47,30 @@ MEDIA_RE = re.compile(
     r"play\s+(.+?)(?:\s+on\s+(spotify|youtube|soundcloud|netflix|prime|local|drive|pc))?$",
     re.IGNORECASE,
 )
+WEATHER_LOCATION_RE = re.compile(
+    r"\b(?:weather|forecast|temperature|conditions?)\s+(?:in|at|for)\s+([a-zA-Z][a-zA-Z\s\-\.',]{1,80})",
+    re.IGNORECASE,
+)
+WEATHER_LOCATION_ALT_RE = re.compile(
+    r"\b(?:in|at|for)\s+([a-zA-Z][a-zA-Z\s\-\.',]{1,80})\s+(?:weather|forecast|temperature|conditions?)",
+    re.IGNORECASE,
+)
+WEATHER_UNIT_RE = re.compile(r"\b(celsius|fahrenheit|metric|imperial|\d+\s*[cf])\b", re.IGNORECASE)
 VOLUME_RE = re.compile(r"(\d{1,3})\s*(%|percent)", re.IGNORECASE)
 BRIGHTNESS_RE = re.compile(r"(\d{1,3})\s*(%|percent)", re.IGNORECASE)
 CAPITALIZED_APP_RE = re.compile(
-    r"\b(?:open|launch|start|close|run|quit)\s+([A-Z][\w]*(?:\s+[A-Z][\w]*)*)"
+    r"\b(?:open|launch|start|close|run|quit|switch\s+to|focus\s+on)\s+([A-Z][\w]*(?:\s+[A-Z][\w]*)*)"
 )
 APP_COMMAND_RE = re.compile(
-    r"\b(?:open|launch|start|close|run|quit|exit|terminate)(?:\s+(?:the|my|app|application|program))?\s+([\w\s\+\.-]{2,80})",
+    r"\b(?:open|launch|start|close|run|quit|exit|terminate|switch\s+to|focus\s+on|bring)"
+    r"(?:\s+(?:the|my|app|application|program|window))?\s+([\w\s\+\.-]{2,80})",
     re.IGNORECASE,
 )
 APP_SUFFIX_SPLIT_RE = re.compile(
-    r"\b(?:please|now|for me|if you can|if possible|right now|thanks|thank you|quickly|today)\b",
+    r"\b(?:please|now|for me|if you can|if possible|right now|thanks|thank you|quickly|today|to front)\b",
     re.IGNORECASE,
 )
+GENERIC_APP_TARGETS = {"this", "that", "it", "app", "application", "program", "window", "current", "active"}
 
 
 class EntityExtractor:
@@ -130,9 +141,53 @@ class EntityExtractor:
         if not candidate:
             return ""
         candidate = APP_SUFFIX_SPLIT_RE.split(candidate, maxsplit=1)[0]
-        candidate = re.sub(r"\b(?:app|application|program)\b", " ", candidate, flags=re.IGNORECASE)
+        candidate = re.sub(r"\b(?:app|application|program|window)\b", " ", candidate, flags=re.IGNORECASE)
         candidate = re.sub(r"\s+", " ", candidate).strip().lower()
+        if candidate in GENERIC_APP_TARGETS:
+            return ""
         return candidate
+
+    @staticmethod
+    def _extract_weather_location(text: str) -> str:
+        source = str(text or "")
+        if not source:
+            return ""
+
+        for regex in (WEATHER_LOCATION_RE, WEATHER_LOCATION_ALT_RE):
+            match = regex.search(source)
+            if match:
+                location = str(match.group(1) or "").strip(" .,!?:;")
+                location = re.sub(
+                    r"\b(?:please|right now|now|today|tomorrow|currently|current|in\s+celsius|in\s+fahrenheit)\b",
+                    "",
+                    location,
+                    flags=re.IGNORECASE,
+                )
+                location = re.sub(r"\s+", " ", location).strip(" .,!?:;")
+                if location:
+                    return location
+
+        fallback = re.sub(
+            r"\b(?:what(?:'s| is)?|tell me|show me|give me|how(?:'s| is)|weather|forecast|temperature|conditions?|in|at|for)\b",
+            " ",
+            source,
+            flags=re.IGNORECASE,
+        )
+        fallback = re.sub(r"\s+", " ", fallback).strip(" .,!?:;")
+        if len(fallback.split()) <= 4:
+            return fallback
+        return ""
+
+    @staticmethod
+    def _extract_weather_unit(text: str) -> str:
+        source = str(text or "")
+        match = WEATHER_UNIT_RE.search(source)
+        if not match:
+            return ""
+        token = str(match.group(1) or "").strip().lower()
+        if token in {"fahrenheit", "imperial"} or token.endswith("f"):
+            return "F"
+        return "C"
 
     @staticmethod
     def _infer_app_from_text(text: str) -> str:
@@ -173,7 +228,7 @@ class EntityExtractor:
             if cap:
                 slots["app_name"] = self._clean_app_candidate(cap.group(1))
 
-        if intent in {"launch_app", "close_app"} and "app_name" not in slots:
+        if intent in {"launch_app", "close_app", "switch_app"} and "app_name" not in slots:
             inferred_app = self._infer_app_from_text(normalized_text)
             if inferred_app:
                 slots["app_name"] = inferred_app
@@ -191,6 +246,14 @@ class EntityExtractor:
             slots["media_title"] = media_match.group(1).strip()
             if media_match.group(2):
                 slots["platform"] = media_match.group(2).lower()
+
+        if intent == "weather_query" or any(token in lower_text for token in ["weather", "forecast", "temperature"]):
+            weather_location = self._extract_weather_location(normalized_text)
+            if weather_location:
+                slots["weather_location"] = weather_location
+            weather_unit = self._extract_weather_unit(normalized_text)
+            if weather_unit:
+                slots["weather_unit"] = weather_unit
 
         if doc is not None:
             for ent in doc.ents:

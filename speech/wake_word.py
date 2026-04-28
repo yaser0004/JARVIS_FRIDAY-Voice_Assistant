@@ -43,6 +43,8 @@ class WakeWordDetector(QObject):
         self._disabled_reason = ""
         self._phrase_fallback = self.stt is not None and bool(self.activation_phrases)
         self._prefer_phrase_mode = self._phrase_fallback
+        self._detection_paused = False
+        self._speech_energy_threshold = 0.01
 
         self.model = None
 
@@ -118,49 +120,140 @@ class WakeWordDetector(QObject):
             return 0.0
         return 0.0
 
-    def _listen_loop(self) -> None:
-        with sd.InputStream(
-            samplerate=self.sample_rate,
-            channels=1,
-            dtype="float32",
-            blocksize=self.chunk_size,
-            callback=self._audio_callback,
-        ) as stream:
-            while self._running:
-                try:
-                    chunk = self._queue.get(timeout=0.2)
-                except queue.Empty:
-                    continue
+    def _clear_audio_queue(self) -> None:
+        while not self._queue.empty():
+            try:
+                self._queue.get_nowait()
+            except queue.Empty:
+                break
 
-                start = time.perf_counter()
-                score = self._predict_score(chunk)
-                if score >= self.sensitivity:
-                    latency = (time.perf_counter() - start) * 1000
-                    log_performance("wake_word_trigger", latency)
-                    self.wake_word_detected.emit()
-                    self.state_changed.emit("LISTENING")
-                    self._play_chime()
-                    try:
-                        stream.stop()
-                    except Exception:
-                        pass
-                    try:
-                        self._capture_follow_up()
-                    finally:
-                        if self._running:
+    def set_detection_paused(self, paused: bool) -> None:
+        self._detection_paused = bool(paused)
+        if self._detection_paused:
+            self._clear_audio_queue()
+
+    def _capture_transcript_from_queue(self, timeout: float) -> str:
+        if self.stt is None:
+            return ""
+
+        deadline = time.perf_counter() + max(1.0, float(timeout))
+        chunk_seconds = self.chunk_size / self.sample_rate
+        min_blocks = max(2, int(0.25 / chunk_seconds))
+        silence_limit = max(2, int(0.8 / chunk_seconds))
+
+        speech_started = False
+        silence_blocks = 0
+        recorded: list[np.ndarray] = []
+
+        while self._running and time.perf_counter() < deadline:
+            try:
+                chunk = self._queue.get(timeout=0.2)
+            except queue.Empty:
+                if speech_started and recorded:
+                    silence_blocks += 1
+                    if silence_blocks >= silence_limit:
+                        break
+                continue
+
+            if chunk.size == 0:
+                continue
+
+            energy = float(np.sqrt(np.mean(np.square(chunk))))
+
+            if not speech_started:
+                if energy >= self._speech_energy_threshold:
+                    speech_started = True
+                    recorded.append(chunk)
+                continue
+
+            recorded.append(chunk)
+            if energy < self._speech_energy_threshold:
+                silence_blocks += 1
+                if silence_blocks >= silence_limit and len(recorded) >= min_blocks:
+                    break
+            else:
+                silence_blocks = 0
+
+        if not recorded:
+            return ""
+
+        audio = np.concatenate(recorded, axis=0)
+        transcript = self.stt.transcribe(audio, sample_rate=self.sample_rate)
+        return str(transcript.get("text", "")).strip()
+
+    def _capture_follow_up_from_stt(self) -> None:
+        if self.stt is None:
+            return
+
+        transcript = self.stt.listen_once(timeout=6)
+        first_text = str(transcript.get("text", "")).strip()
+        if first_text:
+            filtered = self._strip_activation_phrase(first_text)
+            if filtered and not self._looks_like_wake_only(filtered):
+                self.transcript_ready.emit(filtered)
+                return
+
+        self.wake_acknowledged.emit("Yes? Listening.")
+        time.sleep(0.6)
+        follow = self.stt.listen_once(timeout=self.follow_up_timeout)
+        follow_text = str(follow.get("text", "")).strip()
+        if not follow_text:
+            return
+        follow_filtered = self._strip_activation_phrase(follow_text)
+        if follow_filtered:
+            self.transcript_ready.emit(follow_filtered)
+
+    def _listen_loop(self) -> None:
+        while self._running:
+            try:
+                with sd.InputStream(
+                    samplerate=self.sample_rate,
+                    channels=1,
+                    dtype="float32",
+                    blocksize=self.chunk_size,
+                    callback=self._audio_callback,
+                ):
+                    while self._running:
+                        if self._detection_paused:
+                            self._clear_audio_queue()
+                            time.sleep(0.08)
+                            continue
+
+                        try:
+                            chunk = self._queue.get(timeout=0.2)
+                        except queue.Empty:
+                            continue
+
+                        start = time.perf_counter()
+                        score = self._predict_score(chunk)
+                        if score >= self.sensitivity:
+                            latency = (time.perf_counter() - start) * 1000
+                            log_performance("wake_word_trigger", latency)
+                            self.wake_word_detected.emit()
+                            self.state_changed.emit("LISTENING")
+                            self._play_chime()
                             try:
-                                stream.start()
-                            except Exception:
-                                pass
-                        while not self._queue.empty():
-                            try:
-                                self._queue.get_nowait()
-                            except queue.Empty:
-                                break
+                                self._capture_follow_up()
+                            finally:
+                                self._clear_audio_queue()
+                            self.state_changed.emit("IDLE")
+            except Exception as exc:
+                if self._running:
+                    log_performance("wake_stream_error", 0.0, str(exc))
                     self.state_changed.emit("IDLE")
+
+            if not self._running:
+                break
+
+            log_performance("wake_stream_recover", 0.0, "reopening_input_stream")
+            time.sleep(0.12)
 
     def _listen_loop_phrase_fallback(self) -> None:
         while self._running:
+            if self._detection_paused:
+                time.sleep(0.2)
+                continue
+
             if self.stt is None:
                 time.sleep(0.2)
                 continue
@@ -215,8 +308,12 @@ class WakeWordDetector(QObject):
         if self.stt is None:
             return
 
-        transcript = self.stt.listen_once(timeout=6)
-        first_text = str(transcript.get("text", "")).strip()
+        # Phrase fallback mode does not run a continuous callback stream.
+        if self.model is None:
+            self._capture_follow_up_from_stt()
+            return
+
+        first_text = self._capture_transcript_from_queue(timeout=6)
         if first_text:
             filtered = self._strip_activation_phrase(first_text)
             if filtered and not self._looks_like_wake_only(filtered):
@@ -225,8 +322,7 @@ class WakeWordDetector(QObject):
 
         self.wake_acknowledged.emit("Yes? Listening.")
         time.sleep(0.6)
-        follow = self.stt.listen_once(timeout=self.follow_up_timeout)
-        follow_text = str(follow.get("text", "")).strip()
+        follow_text = self._capture_transcript_from_queue(timeout=self.follow_up_timeout)
         if not follow_text:
             return
         follow_filtered = self._strip_activation_phrase(follow_text)
@@ -252,8 +348,11 @@ class WakeWordDetector(QObject):
         return cleaned
 
     def start(self) -> None:
-        if self._running:
+        if self._running and self._thread is not None and self._thread.is_alive():
             return
+        if self._running and (self._thread is None or not self._thread.is_alive()):
+            # If the worker thread exited unexpectedly, allow a clean restart.
+            self._running = False
 
         target = None
         if self._prefer_phrase_mode and self._phrase_fallback:
@@ -266,6 +365,7 @@ class WakeWordDetector(QObject):
         if target is None:
             return
 
+        self._detection_paused = False
         self._running = True
         self._thread = threading.Thread(target=target, daemon=True)
         self._thread.start()
@@ -278,6 +378,8 @@ class WakeWordDetector(QObject):
 
     def stop(self) -> None:
         self._running = False
+        self._detection_paused = False
         if self._thread and self._thread.is_alive():
             self._thread.join(timeout=1.0)
+        self._clear_audio_queue()
 

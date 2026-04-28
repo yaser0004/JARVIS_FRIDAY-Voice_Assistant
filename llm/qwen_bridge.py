@@ -281,7 +281,7 @@ class QwenBridge:
             self._trace("ensure_runtime_switch_backend", from_backend=self._active_backend_name, prefer_gpu=bool(prefer_gpu))
             self.close()
 
-        selected_backend = self._start_runtime(prefer_gpu)
+        selected_backend = self._start_runtime(prefer_gpu, device_hint=device_hint)
         if not selected_backend:
             self._trace("ensure_runtime_failed", prefer_gpu=bool(prefer_gpu), reason=self._unavailable_reason)
             self._set_status("error", self._unavailable_reason or "LLM runtime failed to start.")
@@ -327,7 +327,7 @@ class QwenBridge:
         except Exception as exc:
             return kwargs, False, f"Qwen2.5-VL chat handler setup failed: {exc}"
 
-    def _start_runtime(self, prefer_gpu: bool) -> str | None:
+    def _start_runtime(self, prefer_gpu: bool, device_hint: Optional[str] = None) -> str | None:
         prefer_gpu = bool(prefer_gpu and self._llama_gpu_offload_supported)
         self._trace("start_runtime", prefer_gpu=bool(prefer_gpu), force_worker=bool(self._force_worker))
         selected_backend: str | None = None
@@ -337,7 +337,8 @@ class QwenBridge:
             self._trace("start_runtime_skip_in_process", reason="disabled_for_session")
         if selected_backend is None:
             worker_prefer_gpu = prefer_gpu
-            if not worker_prefer_gpu and self._compute_mode == "gpu":
+            explicit_cpu = str(device_hint or "").strip().lower() == "cpu"
+            if not worker_prefer_gpu and self._compute_mode == "gpu" and not explicit_cpu:
                 worker_prefer_gpu = True
             selected_backend = self._start_worker_runtime(prefer_gpu=worker_prefer_gpu)
         self._trace("start_runtime_result", backend=selected_backend or "none")
@@ -979,7 +980,7 @@ class QwenBridge:
             self._set_status("error", f"Local LLM error: {exc}")
             return f"Local LLM error: {exc}"
 
-    def prewarm(self) -> bool:
+    def prewarm(self, image_mode: bool = False) -> bool:
         """
         Warm up the runtime to reduce first-response latency.
         """
@@ -987,6 +988,7 @@ class QwenBridge:
             self._set_status("unavailable", self._unavailable_reason or "LLM model file is missing.")
             return False
 
+        self._prepare_model_for_request(image_mode=bool(image_mode))
         self._set_status("initializing", "Prewarming local LLM runtime.")
         try:
             if not self._ensure_runtime_for_request("prewarm", device_hint="cpu"):

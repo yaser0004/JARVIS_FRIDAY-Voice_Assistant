@@ -1,4 +1,4 @@
-<![CDATA[# JARVIS — Project Documentation
+# JARVIS — Project Documentation
 
 > **Just A Really Very Intelligent System**
 >

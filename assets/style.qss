@@ -12,6 +12,33 @@ QLineEdit {
     selection-background-color: rgba(0, 245, 255, 60);
 }
 
+QSpinBox,
+QDoubleSpinBox {
+    background: rgba(6, 15, 24, 220);
+    border: 1px solid rgba(0, 245, 255, 46);
+    border-radius: 8px;
+    padding: 6px;
+    color: #c8eaf0;
+    selection-background-color: rgba(0, 245, 255, 60);
+}
+
+QSpinBox::up-button,
+QSpinBox::down-button,
+QDoubleSpinBox::up-button,
+QDoubleSpinBox::down-button {
+    background: rgba(0, 184, 200, 15);
+    border: 1px solid rgba(0, 245, 255, 30);
+    width: 14px;
+}
+
+QSpinBox::up-arrow,
+QSpinBox::down-arrow,
+QDoubleSpinBox::up-arrow,
+QDoubleSpinBox::down-arrow {
+    width: 8px;
+    height: 8px;
+}
+
 QPushButton {
     background: rgba(0, 184, 200, 30);
     border: 1px solid rgba(0, 245, 255, 60);
@@ -21,6 +48,27 @@ QPushButton {
 
 QPushButton:hover {
     background: rgba(0, 245, 255, 40);
+}
+
+QToolButton#webToggleButton {
+    background: rgba(0, 184, 200, 18);
+    border: 1px solid rgba(0, 245, 255, 55);
+    border-radius: 8px;
+}
+
+QToolButton#webToggleButton:hover {
+    background: rgba(0, 245, 255, 28);
+    border: 1px solid rgba(0, 245, 255, 85);
+}
+
+QToolButton#webToggleButton:checked {
+    background: rgba(0, 245, 255, 58);
+    border: 1px solid rgba(0, 245, 255, 170);
+}
+
+QToolButton#webToggleButton:disabled {
+    background: rgba(0, 184, 200, 8);
+    border: 1px solid rgba(0, 245, 255, 22);
 }
 
 QComboBox {

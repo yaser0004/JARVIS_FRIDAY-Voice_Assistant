@@ -327,7 +327,7 @@ class JarvisPipeline(QObject):
             self._warm_stt_async()
             self._init_wakeword_async(auto_start=bool(self._wakeword_config.get("enabled", False)))
             self._bootstrap_indexes_async()
-            self._prewarm_llm_async()
+            self._prewarm_llm_startup()
         except Exception as exc:
             trace_exception("backend.pipeline", exc, event="initialize_fatal")
             log_performance("pipeline_init_fatal", 0.0, str(exc))
@@ -351,6 +351,11 @@ class JarvisPipeline(QObject):
                 self._init_wakeword_async(auto_start=True)
             return
         self._trace("start_wake_word_requested")
+        if hasattr(self.wake_word, "set_detection_paused"):
+            try:
+                self.wake_word.set_detection_paused(False)
+            except Exception:
+                pass
         self.wake_word.start()
 
     def stop_wake_word(self) -> None:
@@ -416,22 +421,20 @@ class JarvisPipeline(QObject):
 
         threading.Thread(target=worker, daemon=True).start()
 
-    def _prewarm_llm_async(self) -> None:
+    def _prewarm_llm_startup(self) -> None:
         if self.llm is None or not hasattr(self.llm, "prewarm"):
             self._trace("llm_prewarm_skipped")
             return
 
-        self._trace("llm_prewarm_started")
+        prefer_vision = os.getenv("JARVIS_LLM_PREWARM_VISION", "1").strip().lower() in {"1", "true", "yes"}
+        self._trace("llm_prewarm_started", prefer_vision=bool(prefer_vision))
 
-        def worker() -> None:
-            try:
-                ready = bool(self.llm.prewarm())
-                self._trace("llm_prewarm_completed", ready=ready)
-            except Exception as exc:
-                trace_exception("backend.pipeline", exc, event="llm_prewarm_failed")
-                log_performance("llm_prewarm_error", 0.0, str(exc))
-
-        threading.Thread(target=worker, daemon=True).start()
+        try:
+            ready = bool(self.llm.prewarm(image_mode=prefer_vision))
+            self._trace("llm_prewarm_completed", ready=ready, vision_mode=bool(prefer_vision))
+        except Exception as exc:
+            trace_exception("backend.pipeline", exc, event="llm_prewarm_failed")
+            log_performance("llm_prewarm_error", 0.0, str(exc))
 
     def _init_wakeword_async(self, auto_start: bool = False) -> None:
         self._wakeword_initializing = True
@@ -681,32 +684,67 @@ class JarvisPipeline(QObject):
         if bridge is None and self.router is not None:
             bridge = getattr(self.router, "llm", None)
 
+        router_vision_status: Dict[str, Any] = {}
+        if self.router is not None and hasattr(self.router, "get_vision_runtime_status"):
+            try:
+                router_vision_status = dict(self.router.get_vision_runtime_status())
+            except Exception:
+                router_vision_status = {}
+
+        def _apply_router_vision(payload: Dict[str, Any]) -> Dict[str, Any]:
+            preferred = str(router_vision_status.get("preferred_backend") or "").strip().lower()
+            if preferred:
+                payload["vision_backend_preference"] = preferred
+
+            ollama_status = router_vision_status.get("ollama")
+            if isinstance(ollama_status, dict):
+                ollama_available = bool(ollama_status.get("available", False))
+                payload["ollama_vision_available"] = ollama_available
+                model_name = str(ollama_status.get("model") or "").strip()
+                if model_name:
+                    payload["ollama_vision_model"] = model_name
+                message = str(ollama_status.get("message") or "").strip()
+                if message:
+                    payload["ollama_vision_message"] = message
+                if preferred == "ollama":
+                    payload["supports_vision"] = ollama_available
+                    payload["vision_backend"] = "ollama"
+                elif preferred == "auto" and ollama_available:
+                    payload["supports_vision"] = True
+                    payload["vision_backend"] = "ollama"
+
+            if "vision_backend" not in payload:
+                payload["vision_backend"] = "qwen2.5-vl"
+            return payload
+
         if bridge is None:
-            return {
+            status = {
                 "state": "unavailable",
                 "mode": "none",
                 "message": "LLM bridge is unavailable.",
                 "supports_vision": False,
             }
+            return _apply_router_vision(status)
 
         if hasattr(bridge, "get_status"):
             try:
                 status = dict(bridge.get_status())
                 if "state" not in status:
                     status["state"] = "ready" if bool(bridge.is_ready()) else "initializing"
-                return status
+                return _apply_router_vision(status)
             except Exception:
                 pass
 
         ready = bool(bridge.is_ready()) if hasattr(bridge, "is_ready") else False
         available = bool(bridge.is_available()) if hasattr(bridge, "is_available") else ready
         supports_vision = bool(bridge.supports_vision()) if hasattr(bridge, "supports_vision") else False
-        return {
+        status = {
             "state": "ready" if ready else ("initializing" if available else "unavailable"),
             "mode": "worker" if ready and getattr(bridge, "llm", None) is None else "in_process",
             "message": "LLM ready." if ready else "LLM is warming up.",
             "supports_vision": supports_vision,
         }
+        return _apply_router_vision(status)
 
     def update_wakeword_settings(
         self,
@@ -878,6 +916,8 @@ class JarvisPipeline(QObject):
             return
 
         try:
+            if self.wake_word is not None and hasattr(self.wake_word, "set_detection_paused"):
+                self.wake_word.set_detection_paused(False)
             self.start_wake_word()
             self._trace("wake_resume_requested")
         except Exception as exc:
@@ -921,9 +961,9 @@ class JarvisPipeline(QObject):
             trace_exception("backend.pipeline", exc, event="wake_session_failed")
             log_performance("wake_session_error", 0.0, str(exc))
         finally:
-            self._resume_wake_listener_after_voice_session()
             with self._wake_session_lock:
                 self._wake_session_active = False
+            self._resume_wake_listener_after_voice_session()
             self._trace("wake_session_finished")
 
     def _handle_wake_transcript(self, text: str) -> None:
@@ -940,10 +980,21 @@ class JarvisPipeline(QObject):
                 return
             self._wake_session_active = True
 
-        try:
-            self.stop_wake_word()
-        except Exception:
-            pass
+        paused = False
+        if bool(self._wakeword_config.get("auto_restart_after_response", True)):
+            try:
+                if self.wake_word is not None and hasattr(self.wake_word, "set_detection_paused"):
+                    self.wake_word.set_detection_paused(True)
+                    paused = True
+                    self._trace("wake_detection_paused")
+            except Exception:
+                paused = False
+
+        if not paused:
+            try:
+                self.stop_wake_word()
+            except Exception:
+                pass
 
         self._trace("wake_session_worker_spawned")
         threading.Thread(target=self._wake_voice_session_worker, args=(transcript,), daemon=True).start()
@@ -1047,6 +1098,18 @@ class JarvisPipeline(QObject):
             "supported_intents": supported_intents,
         }
         return payload
+
+    def _emit_direct_intent_diagnostics(self, intent: str, confidence: float, provider: str) -> None:
+        intent_result: Dict[str, Any] = {
+            "intent": str(intent or "general_qa"),
+            "confidence": float(confidence),
+            "all_scores": {str(intent or "general_qa"): float(confidence)},
+            "runtime": "direct_route",
+            "provider": str(provider or ""),
+            "latency_ms": 0.0,
+        }
+        self.intent_classified.emit(intent_result["intent"], float(intent_result["confidence"]))
+        self.intent_diagnostics.emit(self._build_intent_diagnostics(intent_result))
 
     def process_text(self, text: str, *, capture_tts_future: bool = False) -> Dict[str, Any]:
         self._require_initialized()
@@ -1304,6 +1367,7 @@ class JarvisPipeline(QObject):
 
         self._cancel_requested = False
         self._set_state("PROCESSING")
+        self._emit_direct_intent_diagnostics("vision_query", 1.0, "vision_image")
         result = self.router.analyze_image_file(file_path, prompt=prompt)
         if self._cancel_requested:
             self._trace("analyze_image_file_cancelled")
@@ -1333,6 +1397,7 @@ class JarvisPipeline(QObject):
 
         self._cancel_requested = False
         self._set_state("PROCESSING")
+        self._emit_direct_intent_diagnostics("vision_query", 1.0, "vision_camera")
         result = self.router.analyze_camera_capture()
         if self._cancel_requested:
             self._trace("analyze_camera_cancelled")

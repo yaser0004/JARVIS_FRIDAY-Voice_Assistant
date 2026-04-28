@@ -93,6 +93,7 @@ class JarvisMainWindow(QMainWindow):
         self._last_image_source = ""
         self._resume_wake_after_hold = False
         self._is_shutting_down = False
+        self._assistant_name = "JARVIS"
         self._screen_capture = ScreenCapture()
         self._webcam_capture = WebcamCapture()
 
@@ -150,12 +151,22 @@ class JarvisMainWindow(QMainWindow):
         self.plus_btn.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
         self.plus_btn.setFixedWidth(38)
 
+        self.web_toggle_btn = QToolButton(center_panel)
+        self.web_toggle_btn.setObjectName("webToggleButton")
+        try:
+            web_icon = self.style().standardIcon(QStyle.StandardPixmap.SP_DriveNetIcon)
+        except Exception:
+            web_icon = self.style().standardIcon(QStyle.StandardPixmap.SP_BrowserReload)
+        self.web_toggle_btn.setIcon(web_icon)
+        self.web_toggle_btn.setToolTip("Web overview: OFF")
+        self.web_toggle_btn.setCheckable(True)
+        self.web_toggle_btn.setFixedWidth(38)
+        self.web_toggle_btn.setEnabled(False)
+        self.web_toggle_btn.toggled.connect(self._on_verified_web_toggled)
+
         self.plus_menu = QMenu(self.plus_btn)
-        self.verified_web_action = QAction("Verified Web Mode", self.plus_menu)
+        self.verified_web_action = QAction("Verified Web Mode", self)
         self.verified_web_action.setCheckable(True)
-        self.verified_web_action.toggled.connect(self._on_verified_web_toggled)
-        self.plus_menu.addAction(self.verified_web_action)
-        self.plus_menu.addSeparator()
 
         self.analyze_file_action = QAction("Attach Image", self.plus_menu)
         self.analyze_file_action.triggered.connect(self._analyze_image_from_file)
@@ -237,6 +248,7 @@ class JarvisMainWindow(QMainWindow):
         self.mic_btn.setEnabled(False)
 
         input_row.addWidget(self.plus_btn)
+        input_row.addWidget(self.web_toggle_btn)
         input_row.addWidget(self.input_box, 1)
         input_row.addWidget(self.inline_attachment_icon)
         input_row.addWidget(self.send_btn)
@@ -267,6 +279,7 @@ class JarvisMainWindow(QMainWindow):
 
         self.tray = JarvisSystemTray(self, APP_ICON_PATH, self)
         self.tray.show()
+        self._refresh_assistant_branding()
 
         self.sidebar.settings_btn.clicked.connect(self._open_settings)
         self.sidebar.logs_btn.clicked.connect(self._open_logs)
@@ -289,6 +302,36 @@ class JarvisMainWindow(QMainWindow):
 
     def _trace(self, event: str, **details) -> None:
         trace_event("ui.main_window", event, **details)
+
+    @staticmethod
+    def _assistant_name_from_profile(profile: str | None) -> str:
+        normalized_profile = str(profile or "").strip().lower()
+        return "JARVIS" if normalized_profile == "male" else "FRIDAY"
+
+    @staticmethod
+    def _assistant_expansion(assistant_name: str) -> str:
+        if str(assistant_name or "").strip().upper() == "JARVIS":
+            return "Just A Really Very Intelligent System"
+        return "Female Replacement Intelligent Digital Assistant Youth"
+
+    def _refresh_assistant_branding(self) -> None:
+        profile = ""
+        if self.pipeline is not None:
+            try:
+                tts_settings = self.pipeline.get_tts_settings()
+                profile = str(tts_settings.get("profile", "") or "")
+            except Exception:
+                profile = ""
+        if not profile:
+            profile = "male" if self._assistant_name == "JARVIS" else "female"
+
+        self._assistant_name = self._assistant_name_from_profile(profile)
+        expansion = self._assistant_expansion(self._assistant_name)
+        self.setWindowTitle(f"{self._assistant_name} - {expansion}")
+        self.input_box.setPlaceholderText(f"Ask {self._assistant_name} anything...")
+        self.chat.set_assistant_name(self._assistant_name)
+        self.sidebar.set_brand_name(self._assistant_name)
+        self.tray.set_assistant_name(self._assistant_name)
 
     def _start_long_task_hint_timer(self, delay_ms: int = 2400, hint_text: str = "Processing, this may take a while...") -> None:
         self._long_task_hint_shown = False
@@ -368,10 +411,11 @@ class JarvisMainWindow(QMainWindow):
         self._trace("pipeline_start_requested", intent_model=selected_model)
         self.pipeline = JarvisPipeline()
         self.pipeline.set_intent_model(selected_model)
+        self._refresh_assistant_branding()
         self.pipeline.pipeline_state_changed.connect(self._on_state_changed)
         self.pipeline.new_message.connect(self._on_new_message)
-        self.pipeline.intent_classified.connect(self._on_intent)
-        self.pipeline.intent_diagnostics.connect(self._on_intent_diagnostics)
+        self.pipeline.intent_classified.connect(self._on_intent, Qt.ConnectionType.QueuedConnection)
+        self.pipeline.intent_diagnostics.connect(self._on_intent_diagnostics, Qt.ConnectionType.QueuedConnection)
         self.pipeline.initialization_progress.connect(self._on_init_progress)
         self.pipeline.wakeword_availability_changed.connect(self._on_wakeword_availability_changed)
         self.pipeline.ready.connect(self._on_pipeline_ready)
@@ -392,15 +436,22 @@ class JarvisMainWindow(QMainWindow):
             if wake_enabled:
                 self.pipeline.start_wake_word()
 
-        self.tray.wake_enabled = wake_available
+        self._refresh_assistant_branding()
+        self.tray.wake_enabled = wake_enabled and (wake_available or wake_initializing)
+        self.tray.set_wake_tooltip_state(
+            wake_enabled=wake_enabled,
+            wake_ready=wake_available,
+            wake_initializing=wake_initializing,
+        )
         self.input_box.setEnabled(True)
         self.send_btn.setEnabled(True)
         self._set_send_button_mode(False)
         self.mic_btn.setEnabled(True)
         self.plus_btn.setEnabled(True)
-        self.verified_web_action.setChecked(self.pipeline.is_realtime_web_enabled())
+        self.web_toggle_btn.setEnabled(True)
+        self._set_verified_web_controls(self.pipeline.is_realtime_web_enabled())
         self._refresh_attachment_actions()
-        self._append_log("JARVIS is online and ready.")
+        self._append_log(f"{self._assistant_name} is online and ready.")
         self._trace(
             "pipeline_ready",
             wake_enabled=wake_enabled,
@@ -424,16 +475,18 @@ class JarvisMainWindow(QMainWindow):
 
         wake_status = self.pipeline.get_wakeword_status()
         wake_enabled = bool(wake_status.get("enabled", False))
+        wake_initializing = bool(wake_status.get("initializing", False))
 
         if wake_enabled:
-            self.tray.wake_enabled = bool(available)
-            if available:
-                self.tray.setToolTip("JARVIS - Wake word listening")
-            else:
-                self.tray.setToolTip("JARVIS - Wake word starting")
+            self.tray.wake_enabled = bool(available or wake_initializing)
         else:
             self.tray.wake_enabled = False
-            self.tray.setToolTip("JARVIS - Active")
+
+        self.tray.set_wake_tooltip_state(
+            wake_enabled=wake_enabled,
+            wake_ready=bool(available),
+            wake_initializing=wake_initializing,
+        )
 
         self._trace(
             "wakeword_availability_changed",
@@ -527,7 +580,18 @@ class JarvisMainWindow(QMainWindow):
         if len(self._logs) > 500:
             self._logs = self._logs[-500:]
 
+    def _set_verified_web_controls(self, enabled: bool) -> None:
+        value = bool(enabled)
+        self.verified_web_action.blockSignals(True)
+        self.verified_web_action.setChecked(value)
+        self.verified_web_action.blockSignals(False)
+        self.web_toggle_btn.blockSignals(True)
+        self.web_toggle_btn.setChecked(value)
+        self.web_toggle_btn.blockSignals(False)
+        self.web_toggle_btn.setToolTip(f"Web overview: {'ON' if value else 'OFF'}")
+
     def _on_verified_web_toggled(self, enabled: bool) -> None:
+        self._set_verified_web_controls(bool(enabled))
         if self.pipeline is None:
             return
         self.pipeline.set_realtime_web_enabled(bool(enabled))
@@ -1058,7 +1122,7 @@ class JarvisMainWindow(QMainWindow):
     def _open_logs(self) -> None:
         self._trace("open_logs_dialog", log_lines=len(self._logs))
         dialog = QDialog(self)
-        dialog.setWindowTitle("JARVIS Logs")
+        dialog.setWindowTitle(f"{self._assistant_name} Logs")
         dialog.setModal(True)
         dialog.resize(560, 420)
 
@@ -1091,13 +1155,17 @@ class JarvisMainWindow(QMainWindow):
     def _open_settings(self) -> None:
         if not self.pipeline:
             self._trace("open_settings_skipped", reason="pipeline_not_ready")
-            QMessageBox.information(self, "JARVIS Settings", "Pipeline is still starting. Please wait a moment.")
+            QMessageBox.information(
+                self,
+                f"{self._assistant_name} Settings",
+                "Pipeline is still starting. Please wait a moment.",
+            )
             return
 
         self._trace("open_settings_dialog")
 
         dialog = QDialog(self)
-        dialog.setWindowTitle("JARVIS Settings")
+        dialog.setWindowTitle(f"{self._assistant_name} Settings")
         dialog.setModal(True)
         dialog.resize(560, 460)
 
@@ -1161,7 +1229,7 @@ class JarvisMainWindow(QMainWindow):
 
         compute_cfg = self.pipeline.get_compute_settings()
         compute_mode_combo = QComboBox(dialog)
-        compute_mode_combo.addItem("Let JARVIS decide (dynamic)", "auto")
+        compute_mode_combo.addItem(f"Let {self._assistant_name} decide (dynamic)", "auto")
         compute_mode_combo.addItem("CPU only", "cpu")
         compute_mode_combo.addItem("GPU preferred", "gpu")
 
@@ -1443,9 +1511,11 @@ class JarvisMainWindow(QMainWindow):
         self.pipeline.set_tts_enabled(tts_checkbox.isChecked())
         selected_profile = str(tts_profile_combo.currentData() or "female")
         self.pipeline.set_tts_profile(selected_profile)
+        self._refresh_assistant_branding()
         selected_verbosity = str(response_mode_combo.currentData() or "normal")
         self.pipeline.set_response_verbosity(selected_verbosity)
         self.pipeline.set_realtime_web_enabled(verified_web_checkbox.isChecked())
+        self._set_verified_web_controls(self.pipeline.is_realtime_web_enabled())
         self._trace(
             "settings_apply_runtime",
             tts_enabled=bool(tts_checkbox.isChecked()),
@@ -1484,14 +1554,14 @@ class JarvisMainWindow(QMainWindow):
         if active_caps and active_compute_mode == "gpu" and not gpu_active_available:
             QMessageBox.information(
                 self,
-                "JARVIS Settings",
+                f"{self._assistant_name} Settings",
                 "GPU mode was selected, but no compatible GPU runtime is currently available."
-                " JARVIS will continue with CPU fallback until GPU dependencies are available.",
+                f" {self._assistant_name} will continue with CPU fallback until GPU dependencies are available.",
             )
         elif active_caps and active_compute_mode == "gpu" and not llm_gpu_active_available:
             QMessageBox.information(
                 self,
-                "JARVIS Settings",
+                f"{self._assistant_name} Settings",
                 "GPU mode is enabled for supported components, but your local LLM runtime "
                 "(llama-cpp-python) does not currently support GPU offload in this environment. "
                 "LLM responses will run on CPU until GPU-enabled llama-cpp is installed.",
@@ -1541,9 +1611,7 @@ class JarvisMainWindow(QMainWindow):
         else:
             self.disable_wake_word()
 
-        self.verified_web_action.blockSignals(True)
-        self.verified_web_action.setChecked(self.pipeline.is_realtime_web_enabled())
-        self.verified_web_action.blockSignals(False)
+        self._set_verified_web_controls(self.pipeline.is_realtime_web_enabled())
         self._trace("settings_apply_complete")
 
     def enable_wake_word(self) -> None:
@@ -1555,6 +1623,7 @@ class JarvisMainWindow(QMainWindow):
         wake_status = self.pipeline.get_wakeword_status()
         if bool(wake_status.get("initializing", False)):
             self.tray.wake_enabled = False
+            self.tray.set_wake_tooltip_state(wake_enabled=True, wake_ready=False, wake_initializing=True)
             self._trace("enable_wake_initializing")
             self._append_log("Wake-word listener is initializing in the background.")
             return
@@ -1567,9 +1636,11 @@ class JarvisMainWindow(QMainWindow):
                 or "Wake-word backend is unavailable in this runtime. You can keep using the Mic button for explicit voice input.",
             )
             self.tray.wake_enabled = False
+            self.tray.set_wake_tooltip_state(wake_enabled=False, wake_ready=False, wake_initializing=False)
             return
 
         self.tray.wake_enabled = True
+        self.tray.set_wake_tooltip_state(wake_enabled=True, wake_ready=True, wake_initializing=False)
         self._trace("enable_wake_ready")
 
     def disable_wake_word(self) -> None:
@@ -1577,6 +1648,7 @@ class JarvisMainWindow(QMainWindow):
         if self.pipeline:
             self.pipeline.stop_wake_word()
         self.tray.wake_enabled = False
+        self.tray.set_wake_tooltip_state(wake_enabled=False, wake_ready=False, wake_initializing=False)
         self._trace("disable_wake_complete")
 
     def _shutdown_for_exit(self) -> None:
@@ -1600,9 +1672,9 @@ class JarvisMainWindow(QMainWindow):
 
     def _prompt_close_behavior(self) -> str:
         dialog = QMessageBox(self)
-        dialog.setWindowTitle("Exit JARVIS")
+        dialog.setWindowTitle(f"Exit {self._assistant_name}")
         dialog.setIcon(QMessageBox.Icon.Question)
-        dialog.setText("Choose what to do when closing JARVIS.")
+        dialog.setText(f"Choose what to do when closing {self._assistant_name}.")
         dialog.setInformativeText("Run in background, close completely, or cancel.")
 
         background_btn = dialog.addButton("Run in Background", QMessageBox.ButtonRole.AcceptRole)
@@ -1637,7 +1709,10 @@ class JarvisMainWindow(QMainWindow):
                 self._trace("close_event_to_tray")
                 event.ignore()
                 self.hide()
-                self.tray.showMessage("JARVIS", "JARVIS is still running in system tray.")
+                self.tray.showMessage(
+                    self._assistant_name,
+                    f"{self._assistant_name} is still running in system tray.",
+                )
                 return
 
             self._trace("close_event_exit_selected")

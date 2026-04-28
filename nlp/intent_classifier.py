@@ -22,7 +22,9 @@ from core.config import log_performance
 DEFAULT_INTENTS = [
     "launch_app",
     "close_app",
+    "switch_app",
     "web_search",
+    "weather_query",
     "open_website",
     "play_media",
     "system_volume",

@@ -1,16 +1,17 @@
 from __future__ import annotations
 
+import html
 import json
 import re
 from typing import Any, Dict, List, Tuple
 from urllib.error import URLError
-from urllib.parse import quote_plus, urlencode
+from urllib.parse import quote_plus, urlencode, urlparse
 from urllib.request import Request, urlopen
 from xml.etree import ElementTree
 
 
 REQUEST_TIMEOUT = 5
-MAX_SOURCES_FOR_OVERVIEW = 5
+MAX_SOURCES_FOR_OVERVIEW = 7
 MAX_NEWS_ITEMS = 3
 
 
@@ -158,6 +159,60 @@ def _duckduckgo_summary(query: str) -> Tuple[str | None, str | None]:
     return None, None
 
 
+def _duckduckgo_related_summaries(query: str, limit: int = 3) -> List[Tuple[str, str | None]]:
+    params = {
+        "q": query,
+        "format": "json",
+        "no_redirect": "1",
+        "no_html": "1",
+        "skip_disambig": "1",
+    }
+    url = f"https://api.duckduckgo.com/?{urlencode(params)}"
+    payload = _fetch_json(url)
+    if not payload:
+        return []
+
+    related = payload.get("RelatedTopics") or []
+    if not isinstance(related, list):
+        return []
+
+    rows: List[Tuple[str, str | None]] = []
+
+    def _collect_from_item(item: Dict[str, Any]) -> None:
+        text = str(item.get("Text") or "").strip()
+        first_url = str(item.get("FirstURL") or "").strip() or None
+        if text:
+            rows.append((text, first_url))
+
+    for item in related:
+        if len(rows) >= max(1, int(limit)):
+            break
+        if not isinstance(item, dict):
+            continue
+
+        if "Text" in item:
+            _collect_from_item(item)
+            continue
+
+        nested = item.get("Topics") or []
+        if isinstance(nested, list):
+            for sub in nested:
+                if len(rows) >= max(1, int(limit)):
+                    break
+                if isinstance(sub, dict):
+                    _collect_from_item(sub)
+
+    deduped: List[Tuple[str, str | None]] = []
+    seen = set()
+    for text, first_url in rows:
+        key = re.sub(r"[^a-z0-9]+", " ", text.lower()).strip()
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        deduped.append((text, first_url))
+    return deduped[: max(1, int(limit))]
+
+
 def _wikipedia_summary(query: str) -> Tuple[str | None, str | None]:
     search_url = (
         "https://en.wikipedia.org/w/api.php?action=opensearch&limit=1&namespace=0&format=json&search="
@@ -233,7 +288,12 @@ def _news_query(query: str) -> bool:
     return any(token in normalized for token in triggers)
 
 
-def _google_news_highlights(query: str) -> List[Tuple[str, str | None]]:
+def _strip_html_tags(text: str) -> str:
+    no_tags = re.sub(r"<[^>]+>", " ", str(text or ""))
+    return re.sub(r"\s+", " ", no_tags).strip()
+
+
+def _google_news_highlights(query: str) -> List[Tuple[str, str | None, str | None]]:
     params = {
         "q": query,
         "hl": "en-US",
@@ -250,13 +310,15 @@ def _google_news_highlights(query: str) -> List[Tuple[str, str | None]]:
     except ElementTree.ParseError:
         return []
 
-    highlights: List[Tuple[str, str | None]] = []
+    highlights: List[Tuple[str, str | None, str | None]] = []
     for item in root.findall("./channel/item"):
         title = str(item.findtext("title") or "").strip()
+        description_raw = str(item.findtext("description") or "").strip()
+        description = _strip_html_tags(html.unescape(description_raw)) if description_raw else None
         link = str(item.findtext("link") or "").strip() or None
         if not title:
             continue
-        highlights.append((title, link))
+        highlights.append((title, description or None, link))
         if len(highlights) >= MAX_NEWS_ITEMS:
             break
     return highlights
@@ -279,6 +341,26 @@ def _first_sentence(text: str) -> str:
         if len(sentence.split()) >= 4:
             return sentence.strip()
     return str(text or "").strip()
+
+
+def _source_display_name(source: Dict[str, str | None], index: int) -> str:
+    provider = str(source.get("provider") or "").strip()
+    if provider:
+        return provider
+
+    raw_url = str(source.get("url") or "").strip()
+    if raw_url:
+        normalized = raw_url if "://" in raw_url else f"https://{raw_url}"
+        try:
+            host = urlparse(normalized).netloc.strip().lower()
+        except Exception:
+            host = ""
+        if host.startswith("www."):
+            host = host[4:]
+        if host:
+            return host
+
+    return f"Source {index}"
 
 
 def _dedupe_sources(sources: List[Dict[str, str | None]]) -> List[Dict[str, str | None]]:
@@ -311,6 +393,15 @@ def _collect_sources(query: str) -> List[Dict[str, str | None]]:
             }
         )
 
+    for related_text, related_url in _duckduckgo_related_summaries(query, limit=3):
+        sources.append(
+            {
+                "provider": "DuckDuckGo related",
+                "snippet": _clean_snippet(related_text),
+                "url": related_url,
+            }
+        )
+
     wiki_text, wiki_url = _wikipedia_summary(query)
     if wiki_text:
         sources.append(
@@ -332,11 +423,13 @@ def _collect_sources(query: str) -> List[Dict[str, str | None]]:
         )
 
     if _news_query(query):
-        for title, link in _google_news_highlights(query):
+        for title, description, link in _google_news_highlights(query):
+            # Prefer article descriptions over titles to avoid headline-only summaries.
+            snippet_source = description if description and len(description.split()) >= 6 else title
             sources.append(
                 {
                     "provider": "Google News RSS",
-                    "snippet": _clean_snippet(title, max_chars=180),
+                    "snippet": _clean_snippet(snippet_source, max_chars=260),
                     "url": link,
                 }
             )
@@ -420,11 +513,10 @@ def _synthesize_with_llm(query: str, sources: List[Dict[str, str | None]], llm: 
 
     evidence_lines = []
     for index, source in enumerate(sources[:MAX_SOURCES_FOR_OVERVIEW], start=1):
-        provider = str(source.get("provider") or f"Source {index}")
+        source_name = _source_display_name(source, index)
         snippet = str(source.get("snippet") or "").strip()
-        url = str(source.get("url") or "no direct URL").strip()
         if snippet:
-            evidence_lines.append(f"[{index}] {provider}: {snippet} ({url})")
+            evidence_lines.append(f"[{index}] {source_name}: {snippet}")
 
     if not evidence_lines:
         return None
@@ -436,6 +528,7 @@ def _synthesize_with_llm(query: str, sources: List[Dict[str, str | None]], llm: 
         "- Stay faithful to the sources only.\n"
         "- Mention uncertainty when sources conflict or are weak.\n"
         "- Include bracket citations such as [1] and [2].\n\n"
+        "- Do not output raw URLs; reference source names only.\n\n"
         f"Query: {query}\n\n"
         "Sources:\n"
         + "\n".join(evidence_lines)
@@ -452,22 +545,52 @@ def _synthesize_with_llm(query: str, sources: List[Dict[str, str | None]], llm: 
 
 
 def _extractive_overview(sources: List[Dict[str, str | None]]) -> str:
-    sentences: List[str] = []
+    selected_sentences: List[str] = []
     seen = set()
 
     for source in sources[:MAX_SOURCES_FOR_OVERVIEW]:
-        sentence = _first_sentence(str(source.get("snippet") or ""))
-        signature = re.sub(r"\s+", " ", sentence.lower()).strip()
-        if not signature or signature in seen:
+        snippet = str(source.get("snippet") or "").strip()
+        if not snippet:
             continue
-        seen.add(signature)
-        sentences.append(sentence)
-        if len(sentences) >= 3:
+
+        candidates = re.split(r"(?<=[.!?])\s+", snippet)
+        picked_for_source = 0
+        for raw_sentence in candidates:
+            sentence = re.sub(r"\s+", " ", raw_sentence).strip(" \t\n\r:-")
+            if not sentence or len(sentence.split()) < 5:
+                continue
+            if sentence[-1] not in ".!?":
+                sentence = f"{sentence}."
+
+            signature = re.sub(r"[^a-z0-9]+", " ", sentence.lower()).strip()
+            if not signature or signature in seen:
+                continue
+
+            seen.add(signature)
+            selected_sentences.append(sentence)
+            picked_for_source += 1
+
+            if picked_for_source >= 2 or len(selected_sentences) >= 9:
+                break
+
+        if len(selected_sentences) >= 9:
             break
 
-    if not sentences:
+    if not selected_sentences:
         return "I found web signals, but not enough high-quality detail to compose an overview yet."
-    return " ".join(sentences)
+
+    if len(selected_sentences) <= 3:
+        return " ".join(selected_sentences)
+
+    paragraphs: List[str] = []
+    for i in range(0, len(selected_sentences), 3):
+        chunk = selected_sentences[i : i + 3]
+        if chunk:
+            paragraphs.append(" ".join(chunk))
+        if len(paragraphs) >= 3:
+            break
+
+    return "\n\n".join(paragraphs)
 
 
 def verified_answer(query: str, llm: Any | None = None) -> Dict[str, Any]:
@@ -481,10 +604,8 @@ def verified_answer(query: str, llm: Any | None = None) -> Dict[str, Any]:
         return _response(False, "I could not retrieve trusted web snippets right now.")
 
     confidence = _consistency_score(snippets)
-    overview = _synthesize_with_llm(query, sources, llm)
-    synthesis_mode = "llm" if overview else "extractive"
-    if not overview:
-        overview = _extractive_overview(sources)
+    overview = _extractive_overview(sources)
+    synthesis_mode = "extractive"
 
     lines = ["AI web overview:", overview]
 
@@ -495,14 +616,23 @@ def verified_answer(query: str, llm: Any | None = None) -> Dict[str, Any]:
     else:
         lines.append("Cross-source consistency: low, verify manually")
 
-    lines.append("Sources:")
+    source_names: List[str] = []
+    seen_counts: Dict[str, int] = {}
     for index, source in enumerate(sources[:MAX_SOURCES_FOR_OVERVIEW], start=1):
-        provider = str(source.get("provider") or f"Source {index}")
-        url = str(source.get("url") or "").strip()
-        if url:
-            lines.append(f"{index}. {provider} - {url}")
+        base_name = _source_display_name(source, index)
+        normalized_name = base_name.strip().lower()
+        if not normalized_name:
+            continue
+        seen_counts[normalized_name] = int(seen_counts.get(normalized_name, 0)) + 1
+        if seen_counts[normalized_name] == 1:
+            source_names.append(base_name)
         else:
-            lines.append(f"{index}. {provider}")
+            source_names.append(f"{base_name} ({seen_counts[normalized_name]})")
+
+    if source_names:
+        lines.append(f"Sources: {', '.join(source_names)}")
+    else:
+        lines.append("Sources: not available")
 
     source_urls = [str(item.get("url") or "").strip() for item in sources if str(item.get("url") or "").strip()]
 
@@ -513,7 +643,8 @@ def verified_answer(query: str, llm: Any | None = None) -> Dict[str, Any]:
             "mode": "verified_web_overview",
             "synthesis": synthesis_mode,
             "consistency": confidence,
-            "sources": source_urls,
+            "sources": source_names,
+            "source_urls": source_urls,
             "snippets": snippets,
             "providers": [str(item.get("provider") or "") for item in sources],
         },

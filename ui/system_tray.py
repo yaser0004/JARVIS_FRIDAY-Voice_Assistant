@@ -18,6 +18,10 @@ class JarvisSystemTray(QSystemTrayIcon):
         super().__init__(icon, parent)
         self.window = window
         self.wake_enabled = True
+        self._assistant_name = "JARVIS"
+        self._wake_enabled_state = False
+        self._wake_ready_state = False
+        self._wake_initializing_state = False
 
         menu = QMenu()
         self.show_action = QAction("Show Window", self)
@@ -35,8 +39,30 @@ class JarvisSystemTray(QSystemTrayIcon):
         self.quit_action.triggered.connect(self.window.force_quit)
 
         self.activated.connect(self.on_activated)
-        self.setToolTip("JARVIS - Active")
+        self.set_wake_tooltip_state(wake_enabled=False, wake_ready=False, wake_initializing=False)
         trace_event("ui.tray", "initialized", icon_path=str(icon_path), custom_icon=icon_exists)
+
+    def _apply_tooltip(self) -> None:
+        if self._wake_enabled_state and self._wake_ready_state:
+            status_text = "Wake word listening"
+        elif self._wake_enabled_state and self._wake_initializing_state:
+            status_text = "Wake word starting"
+        else:
+            status_text = "Active"
+        self.setToolTip(f"{self._assistant_name} - {status_text}")
+
+    def set_assistant_name(self, assistant_name: str) -> None:
+        normalized_assistant = str(assistant_name or "JARVIS").strip().upper() or "JARVIS"
+        if normalized_assistant == self._assistant_name:
+            return
+        self._assistant_name = normalized_assistant
+        self._apply_tooltip()
+
+    def set_wake_tooltip_state(self, *, wake_enabled: bool, wake_ready: bool, wake_initializing: bool) -> None:
+        self._wake_enabled_state = bool(wake_enabled)
+        self._wake_ready_state = bool(wake_ready)
+        self._wake_initializing_state = bool(wake_initializing)
+        self._apply_tooltip()
 
     def on_activated(self, reason) -> None:
         trace_event("ui.tray", "activated", reason=str(reason))
@@ -70,13 +96,11 @@ class JarvisSystemTray(QSystemTrayIcon):
         wake_initializing = bool(wake_status.get("initializing", False))
 
         self.wake_enabled = wake_enabled and (wake_ready or wake_initializing)
-
-        if wake_enabled and wake_ready:
-            self.setToolTip("JARVIS - Wake word listening")
-        elif wake_enabled and wake_initializing:
-            self.setToolTip("JARVIS - Wake word starting")
-        else:
-            self.setToolTip("JARVIS - Active")
+        self.set_wake_tooltip_state(
+            wake_enabled=wake_enabled,
+            wake_ready=wake_ready,
+            wake_initializing=wake_initializing,
+        )
 
         trace_event(
             "ui.tray",

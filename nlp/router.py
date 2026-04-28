@@ -16,6 +16,7 @@ from actions import (
     system_control,
     system_info,
     time_control,
+    weather_control,
     web_control,
 )
 from core.config import log_performance
@@ -286,6 +287,13 @@ class Router:
             return True
 
         normalized = self._normalize_text(raw_text)
+        # Keep display-control queries (brightness/dim) in system controls, not vision analysis.
+        if re.search(r"\b(?:bright|brightness|brighter|dim|dimmer)\b", normalized) and re.search(
+            r"\b(?:screen|display|monitor)\b",
+            normalized,
+        ):
+            return False
+
         visual_patterns = [
             r"\b(screen|screenshot|display|monitor)\b",
             r"\b(image|photo|picture|pic)\b",
@@ -360,6 +368,11 @@ class Router:
         if any(token in normalized for token in ["battery saver off", "disable battery saver", "turn off battery saver"]):
             return system_control.toggle_battery_saver(False)
 
+        if self._looks_like_switch_request(raw_text):
+            app_name = self._extract_app_name_from_text(raw_text)
+            if app_name:
+                return app_control.switch_to_app(app_name)
+
         return None
 
     def _ensure_cnn(self) -> bool:
@@ -403,6 +416,10 @@ class Router:
             return ""
 
         text = text.lstrip(":\u2014- ").strip()
+        text = text.replace("\r\n", "\n")
+        text = text.replace("**", "")
+        text = re.sub(r"^\s*here(?:'s| is)\s+an?\s+analysis[^:]*:\s*", "", text, flags=re.IGNORECASE)
+        text = re.sub(r"\[\d+\]", "", text)
         prompt_lower = str(user_prompt or "").lower()
         asked_time_or_date = any(token in prompt_lower for token in ["time", "date", "day", "clock"])
         if not asked_time_or_date:
@@ -411,9 +428,253 @@ class Router:
                 lead = lines[0].lower()
                 if lead.startswith(("today is", "the current time", "current date", "it is currently")):
                     lines = lines[1:]
-            text = " ".join(lines).strip() or text
+            text = "\n".join(lines).strip() or text
 
-        return text
+        raw_lines = [line.strip() for line in text.splitlines() if line.strip()]
+        cleaned_lines: List[str] = []
+        seen_keys = set()
+        for raw_line in raw_lines:
+            line = re.sub(r"^#{1,6}\s*", "", raw_line)
+            line = re.sub(r"^[\-*\u2022]+\s+", "", line)
+            line = re.sub(r"^\d+[\.)]\s+", "", line)
+            line = re.sub(r"(?i)^overall\s+impression\s*:?[\s-]*", "", line)
+            line = re.sub(r"\s+", " ", line).strip(" \t:-")
+            if not line:
+                continue
+
+            lower_line = line.lower()
+            if lower_line.startswith(("here is a breakdown", "here's a breakdown")):
+                continue
+            if lower_line in {
+                "overall impression",
+                "here is a breakdown of the visible code snippets",
+                "here's a breakdown of the visible code snippets",
+                "the image shows",
+            }:
+                continue
+
+            key = re.sub(r"[^a-z0-9]+", " ", lower_line).strip()
+            if not key or key in seen_keys:
+                continue
+            seen_keys.add(key)
+
+            if line and line[-1] not in ".!?":
+                line = f"{line}."
+            cleaned_lines.append(line)
+
+        if not cleaned_lines:
+            compact = re.sub(r"\s+", " ", text).strip()
+            return compact
+
+        uncertainty_keywords = (
+            "uncertain",
+            "uncertainty",
+            "cannot determine",
+            "can't determine",
+            "not enough",
+            "unclear",
+            "might",
+            "may",
+        )
+
+        def _line_key(value: str) -> str:
+            return re.sub(r"[^a-z0-9]+", " ", str(value or "").lower()).strip(" .")
+
+        placeholder_keys = {
+            "overview",
+            "details",
+            "uncertainty",
+            "none",
+            "n a",
+            "na",
+            "not available",
+            "unknown",
+        }
+
+        def _is_placeholder(value: str) -> bool:
+            return _line_key(value) in placeholder_keys
+
+        def _dedupe_lines(lines: List[str]) -> List[str]:
+            output: List[str] = []
+            seen_local = set()
+            for item in lines:
+                key = _line_key(item)
+                if not key or key in seen_local:
+                    continue
+                seen_local.add(key)
+                output.append(item)
+            return output
+
+        overview_lines: List[str] = []
+        uncertainty_lines: List[str] = []
+        detail_lines: List[str] = []
+        generic_lines: List[str] = []
+        saw_explicit_details = False
+
+        for line in cleaned_lines:
+            section_match = re.match(r"^(overview|details|uncertainty)\s*:\s*(.*)$", line, flags=re.IGNORECASE)
+            if section_match:
+                section = section_match.group(1).lower()
+                normalized_line = re.sub(
+                    r"^(?:(?:overview|details|uncertainty)\s*:\s*)+",
+                    "",
+                    line,
+                    flags=re.IGNORECASE,
+                ).strip(" \t:-")
+                if not normalized_line:
+                    continue
+                if normalized_line and normalized_line[-1] not in ".!?":
+                    normalized_line = f"{normalized_line}."
+
+                if section == "overview":
+                    if not _is_placeholder(normalized_line):
+                        overview_lines.append(normalized_line)
+                    continue
+
+                if section == "details":
+                    if not _is_placeholder(normalized_line):
+                        saw_explicit_details = True
+                        detail_lines.append(normalized_line)
+                    continue
+
+                if not _is_placeholder(normalized_line):
+                    uncertainty_lines.append(normalized_line)
+                continue
+
+            lowered = line.lower()
+            if lowered.startswith("uncertainty:"):
+                payload = line.split(":", 1)[1].strip()
+                if payload and not _is_placeholder(payload):
+                    uncertainty_lines.append(payload if payload[-1] in ".!?" else f"{payload}.")
+                continue
+
+            if any(keyword in lowered for keyword in uncertainty_keywords):
+                uncertainty_lines.append(line)
+            else:
+                generic_lines.append(line)
+
+        overview_lines = _dedupe_lines(overview_lines)
+        detail_lines = _dedupe_lines(detail_lines)
+        generic_lines = _dedupe_lines(generic_lines)
+        uncertainty_lines = [line for line in _dedupe_lines(uncertainty_lines) if not _is_placeholder(line)]
+
+        if not overview_lines and generic_lines:
+            overview_lines.append(generic_lines[0])
+            generic_lines = generic_lines[1:]
+
+        if generic_lines:
+            detail_lines.extend(item for item in generic_lines if not _is_placeholder(item))
+            detail_lines = _dedupe_lines(detail_lines)
+
+        if not overview_lines and detail_lines and not saw_explicit_details:
+            overview_lines.append(detail_lines[0])
+            detail_lines = detail_lines[1:]
+
+        if not overview_lines and not detail_lines:
+            compact = re.sub(r"\s+", " ", text).strip()
+            return compact
+
+        parts: List[str] = []
+        if overview_lines:
+            parts.append(f"Overview: {' '.join(overview_lines[:2])}")
+        if detail_lines:
+            parts.append(f"Details: {' '.join(detail_lines[:4])}")
+        if uncertainty_lines:
+            parts.append(f"Uncertainty: {' '.join(uncertainty_lines[:2])}")
+
+        if not parts:
+            compact = re.sub(r"\s+", " ", text).strip()
+            return compact
+
+        return "\n\n".join(parts).strip()
+
+    @staticmethod
+    def _vision_backend_preference() -> str:
+        value = str(os.getenv("JARVIS_VISION_BACKEND", "ollama")).strip().lower()
+        aliases = {
+            "llama": "qwen",
+            "llama-cpp": "qwen",
+            "local": "qwen",
+            "worker": "qwen",
+        }
+        normalized = aliases.get(value, value)
+        if normalized not in {"ollama", "qwen", "auto"}:
+            return "ollama"
+        return normalized
+
+    @staticmethod
+    def _build_vision_prompt(user_prompt: str) -> str:
+        prompt_text = (user_prompt or "Describe this image in detail.").strip()
+        if not prompt_text:
+            prompt_text = "Describe this image in detail."
+
+        prefix = (
+            "Analyze only the attached image and answer the request directly. "
+            "If details are uncertain, state uncertainty instead of guessing. "
+            "Do not prepend the current date/time unless asked or visible in the image. "
+            "Return clean plain text only: no markdown, no bullet points, no numbered lists. "
+            "Use sections in this order only when they have meaningful content: Overview:, Details:, Uncertainty:. "
+            "Never repeat section labels inside section text."
+        )
+        return f"{prefix}\nUser request: {prompt_text}"
+
+    def _run_ollama_vision(self, vision_prompt: str, image_bytes: bytes) -> tuple[str, str, Dict[str, Any]]:
+        status: Dict[str, Any] = {}
+        try:
+            from llm.ollama_vision_bridge import OllamaVisionBridge
+
+            bridge = OllamaVisionBridge()
+            status = bridge.get_status()
+            if not status.get("server_reachable"):
+                return (
+                    "",
+                    (
+                        "Ollama vision backend is unreachable. "
+                        "Start Ollama with `ollama serve` and verify JARVIS_OLLAMA_URL."
+                    ),
+                    status,
+                )
+
+            if not status.get("model_available"):
+                model_name = str(status.get("model") or "qwen2.5vl:3b")
+                return (
+                    "",
+                    (
+                        f"Ollama vision model '{model_name}' is not installed. "
+                        f"Run `ollama pull {model_name}`."
+                    ),
+                    status,
+                )
+
+            response_text = bridge.analyze_image(vision_prompt, image_bytes)
+            if getattr(bridge, "last_used_model", ""):
+                status["resolved_model"] = str(getattr(bridge, "last_used_model") or "")
+            return str(response_text or "").strip(), "", status
+        except Exception as exc:
+            trace_exception("backend.router", exc, event="ollama_vision_failed")
+            return "", f"Ollama vision request failed: {exc}", status
+
+    def get_vision_runtime_status(self) -> Dict[str, Any]:
+        status: Dict[str, Any] = {
+            "preferred_backend": self._vision_backend_preference(),
+            "ollama": {
+                "available": False,
+                "message": "Ollama status has not been checked yet.",
+            },
+        }
+        if status["preferred_backend"] not in {"ollama", "auto"}:
+            return status
+
+        try:
+            from llm.ollama_vision_bridge import OllamaVisionBridge
+
+            status["ollama"] = OllamaVisionBridge().get_status()
+        except Exception as exc:
+            status["ollama"] = {
+                "available": False,
+                "message": f"Ollama vision status probe failed: {exc}",
+            }
+        return status
 
     @staticmethod
     def _format_cnn_hints(cnn_result: Dict[str, Any] | None) -> str:
@@ -475,49 +736,72 @@ class Router:
 
         image_bytes, image_error = self._prepare_image_payload(file_path)
         llm_result_text = ""
-        llm_error_text = ""
-        llm_available = self._ensure_llm() and self.llm is not None
-        if llm_available and image_bytes is not None:
-            prompt_text = (prompt or "Describe this image in detail.").strip()
-            if not prompt_text:
-                prompt_text = "Describe this image in detail."
+        vision_errors: List[str] = []
+        backend_preference = self._vision_backend_preference()
+        prompt_text = (prompt or "Describe this image in detail.").strip()
+        if not prompt_text:
+            prompt_text = "Describe this image in detail."
+        vision_prompt = self._build_vision_prompt(prompt_text)
 
-            vl_prompt = (
-                "Analyze only the attached image and answer the request directly. "
-                "If details are uncertain, state uncertainty instead of guessing. "
-                "Do not prepend the current date/time unless asked or visible in the image."
-            )
-            vl_prompt = f"{vl_prompt}\nUser request: {prompt_text}"
-
-            llm_result_text = self.llm.generate(
-                vl_prompt,
-                context=[],
-                device_hint="gpu",
-                image_bytes=image_bytes,
-            )
-
-            llm_text_lower = str(llm_result_text).lower()
-            llm_answer_usable = bool(llm_result_text) and not llm_text_lower.startswith("local llm")
-            if "vision is unavailable in the current runtime" in llm_text_lower:
-                llm_answer_usable = False
-                llm_error_text = (
-                    "I could not run multimodal image analysis because Qwen2.5-VL vision runtime is unavailable. "
-                    "Run `python setup_models.py` to install the VL GGUF + mmproj files."
-                )
-            elif not llm_answer_usable:
-                llm_error_text = str(llm_result_text).strip() or "Multimodal image analysis is temporarily unavailable."
-
-            if llm_answer_usable:
-                cleaned_response = self._sanitize_vision_response(prompt_text, str(llm_result_text))
+        if image_bytes is not None and backend_preference in {"ollama", "auto"}:
+            ollama_text, ollama_error, ollama_status = self._run_ollama_vision(vision_prompt, image_bytes)
+            if ollama_text:
+                cleaned_response = self._sanitize_vision_response(prompt_text, str(ollama_text))
                 return {
                     "success": True,
                     "response_text": cleaned_response,
                     "data": {
-                        "mode": "qwen2.5-vl",
+                        "mode": "ollama_vision",
+                        "vision_backend": "ollama",
+                        "vision_model": str(
+                            ollama_status.get("resolved_model") or ollama_status.get("model") or ""
+                        ),
                         "image_path": str(path),
                         "cnn": cnn_result.get("data") if cnn_result else None,
                     },
                 }
+            if ollama_error:
+                vision_errors.append(str(ollama_error))
+
+        if image_bytes is not None and backend_preference in {"qwen", "auto"}:
+            llm_available = self._ensure_llm() and self.llm is not None
+            if llm_available:
+                llm_result_text = self.llm.generate(
+                    vision_prompt,
+                    context=[],
+                    device_hint="gpu",
+                    image_bytes=image_bytes,
+                )
+
+                llm_text_lower = str(llm_result_text).lower()
+                llm_answer_usable = bool(llm_result_text) and not llm_text_lower.startswith("local llm")
+                if "vision is unavailable in the current runtime" in llm_text_lower:
+                    llm_answer_usable = False
+                    vision_errors.append(
+                        "I could not run multimodal image analysis because Qwen2.5-VL vision runtime is unavailable. "
+                        "Run `python setup_models.py` to install the VL GGUF + mmproj files."
+                    )
+                elif not llm_answer_usable:
+                    vision_errors.append(
+                        str(llm_result_text).strip() or "Multimodal image analysis is temporarily unavailable."
+                    )
+
+                if llm_answer_usable:
+                    cleaned_response = self._sanitize_vision_response(prompt_text, str(llm_result_text))
+                    return {
+                        "success": True,
+                        "response_text": cleaned_response,
+                        "data": {
+                            "mode": "qwen2.5-vl",
+                            "vision_backend": "qwen",
+                            "image_path": str(path),
+                            "cnn": cnn_result.get("data") if cnn_result else None,
+                        },
+                    }
+            else:
+                vision_errors.append("Local Qwen vision runtime is unavailable.")
+
+        llm_error_text = "\n".join(item for item in vision_errors if item).strip()
 
         if llm_error_text:
             response = llm_error_text
@@ -542,7 +826,8 @@ class Router:
                 "success": False,
                 "response_text": response,
                 "data": {
-                    "mode": "qwen2.5-vl-unavailable",
+                    "mode": "vision_unavailable",
+                    "vision_backend": backend_preference,
                     "image_path": str(path),
                     "cnn": cnn_result.get("data") if cnn_result and cnn_result.get("success") else None,
                 },
@@ -588,12 +873,14 @@ class Router:
                 "success": False,
                 "response_text": (
                     "Multimodal image analysis is unavailable right now. "
-                    "Run `python setup_models.py` to install Qwen2.5-VL artifacts.\n"
+                    "If using Ollama vision, ensure `ollama serve` is running and the model is pulled. "
+                    "If using local Qwen vision, run `python setup_models.py`.\n"
                     f"Optional CNN hint (low confidence): {cnn_hints}"
                 ),
                 "data": {
                     "image_path": str(path),
-                    "mode": "qwen2.5-vl-unavailable",
+                    "mode": "vision_unavailable",
+                    "vision_backend": backend_preference,
                     "cnn": cnn_result.get("data") if cnn_result and cnn_result.get("success") else None,
                 },
             }
@@ -647,6 +934,296 @@ class Router:
             return "You are welcome."
         return "I can still help with app control, system settings, media controls, and web actions in this runtime."
 
+    @staticmethod
+    def _contains_any(text: str, tokens: tuple[str, ...]) -> bool:
+        return any(token in text for token in tokens)
+
+    @staticmethod
+    def _looks_like_information_request(raw_text: str) -> bool:
+        normalized = " ".join(str(raw_text or "").lower().split())
+        if not normalized:
+            return False
+
+        # Strip common polite/assistant prefixes before question checks.
+        prefix_patterns = (
+            r"^(?:please|kindly)\s+",
+            r"^(?:hey|hi|hello)\s+(?:assistant|jarvis|aria)\s+",
+            r"^do\s+me\s+a\s+favor(?:\s+and)?\s+",
+            r"^(?:can|could|would|will|shall)\s+you\s+",
+        )
+        for pattern in prefix_patterns:
+            normalized = re.sub(pattern, "", normalized).strip()
+
+        starters = (
+            "what ",
+            "what's ",
+            "whats ",
+            "why ",
+            "how ",
+            "who ",
+            "where ",
+            "when ",
+            "which ",
+            "define ",
+            "explain ",
+            "tell me ",
+        )
+        if normalized.startswith(starters):
+            return True
+
+        question_patterns = (
+            r"\bwhat\s+does\b",
+            r"\bwhy\s+does\b",
+            r"\bhow\s+does\b",
+            r"\bhow\s+much\s+is\b",
+            r"\bwhat\s+is\b",
+            r"\bdifference\s+between\b",
+            r"\bpurpose\s+of\b",
+            r"\bsigns\s+of\b",
+            r"\bcauses\s+of\b",
+        )
+        return any(re.search(pattern, normalized) for pattern in question_patterns)
+
+    @staticmethod
+    def _extract_app_name_from_text(raw_text: str) -> str:
+        pattern = re.compile(
+            r"\b(?:open|launch|start|run|close|quit|exit|terminate|switch\s+to|focus\s+on|bring)"
+            r"(?:\s+(?:the|my|app|application|program|window))?\s+([\w\s\+\.-]{2,80})",
+            re.IGNORECASE,
+        )
+        trailing = re.compile(
+            r"\b(?:please|now|for me|if you can|if possible|right now|thanks|thank you|quickly|today|to front)\b",
+            re.IGNORECASE,
+        )
+        match = pattern.search(str(raw_text or ""))
+        if not match:
+            return ""
+        candidate = str(match.group(1) or "").strip().strip(".,?!")
+        if not candidate:
+            return ""
+        candidate = trailing.split(candidate, maxsplit=1)[0]
+        candidate = re.sub(r"\b(?:app|application|program|window)\b", " ", candidate, flags=re.IGNORECASE)
+        candidate = re.sub(r"\s+", " ", candidate).strip().lower()
+        if candidate in {"", "this", "that", "it", "current", "active"}:
+            return ""
+        return candidate
+
+    @staticmethod
+    def _looks_like_switch_request(raw_text: str) -> bool:
+        normalized = " ".join(str(raw_text or "").lower().split())
+        patterns = (
+            r"\bswitch\s+to\b",
+            r"\bbring\b.*\bto\s+front\b",
+            r"\bfocus\s+(?:on|to)\b",
+        )
+        return any(re.search(pattern, normalized) for pattern in patterns)
+
+    def _recover_intent_from_text(
+        self,
+        raw_text: str,
+        entities: Dict[str, Any],
+        predicted_intent: str,
+        confidence: float,
+    ) -> str:
+        intent = str(predicted_intent or "general_qa").strip().lower()
+        normalized = self._normalize_text(raw_text)
+        weather_terms = (
+            "weather",
+            "forecast",
+            "temperature",
+            "rain",
+            "snow",
+            "humidity",
+            "celsius",
+            "fahrenheit",
+            "degrees",
+        )
+        search_terms = (
+            "search ",
+            "look up",
+            "lookup",
+            "google ",
+            "web search",
+            "find online",
+            "from the web",
+            "news",
+            "latest",
+            "headline",
+            "headlines",
+            "update",
+            "updates",
+        )
+        switch_request = self._looks_like_switch_request(raw_text)
+        info_request = self._looks_like_information_request(raw_text)
+        weather_keyword_signal = self._contains_any(normalized, weather_terms)
+        weather_signal = weather_keyword_signal or bool(entities.get("weather_unit"))
+        explicit_search_signal = bool(entities.get("search_query")) or self._contains_any(normalized, search_terms)
+
+        action_intents = {
+            "launch_app",
+            "close_app",
+            "switch_app",
+            "power_control",
+            "system_volume",
+            "system_brightness",
+            "system_settings",
+            "file_control",
+        }
+
+        # Guard against classifier drift that mislabels search/news requests as weather.
+        if intent == "weather_query" and not weather_signal:
+            if explicit_search_signal:
+                return "web_search"
+            return "general_qa"
+
+        # Keep high-confidence non-generic intents from the classifier.
+        if intent != "general_qa" and confidence >= 0.35:
+            if intent == "web_search" and weather_keyword_signal and not explicit_search_signal:
+                pass
+            elif switch_request and intent in {"launch_app", "close_app", "web_search"}:
+                pass
+            elif info_request and intent in action_intents:
+                pass
+            else:
+                return intent
+
+        if self._contains_any(normalized, ("cancel", "stop", "abort", "never mind")):
+            return "stop_cancel"
+
+        if self._is_visual_request(raw_text, entities):
+            return "vision_query"
+
+        if entities.get("clipboard_action") or "clipboard" in normalized:
+            return "clipboard_action"
+
+        if weather_keyword_signal:
+            if explicit_search_signal:
+                return "web_search"
+            if entities.get("weather_location") or re.search(r"\b(?:in|at|for)\s+[a-z]", normalized):
+                return "weather_query"
+            if "weather" in normalized or "forecast" in normalized:
+                return "weather_query"
+
+        power_terms = (
+            "shutdown",
+            "restart",
+            "hibernate",
+            "sleep",
+            "lock",
+            "monitor off",
+            "turn off monitor",
+            "wifi on",
+            "wifi off",
+            "bluetooth on",
+            "bluetooth off",
+            "airplane mode",
+            "battery saver",
+        )
+        power_action_markers = (
+            "turn ",
+            "enable ",
+            "disable ",
+            "switch ",
+            "restart",
+            "shutdown",
+            "reboot",
+            "lock",
+            "sleep",
+            "hibernate",
+            "put ",
+        )
+        if entities.get("power_command") or self._contains_any(normalized, power_terms):
+            if not info_request:
+                return "power_control"
+
+            explicit_power_switch = (
+                "turn off monitor",
+                "monitor off",
+                "wifi on",
+                "wifi off",
+                "bluetooth on",
+                "bluetooth off",
+                "airplane mode on",
+                "airplane mode off",
+                "battery saver on",
+                "battery saver off",
+            )
+            if self._contains_any(normalized, explicit_power_switch) and self._contains_any(
+                normalized,
+                power_action_markers,
+            ):
+                return "power_control"
+
+        volume_terms = (
+            "volume",
+            "mute",
+            "unmute",
+            "speaker",
+            "speakers",
+            "sound",
+            "audio",
+            "louder",
+            "quieter",
+        )
+        if self._contains_any(normalized, volume_terms):
+            return "system_volume"
+
+        brightness_terms = (
+            "brightness",
+            "screen brighter",
+            "dim the screen",
+            "screen dim",
+            "screen bright",
+            "display brightness",
+        )
+        if self._contains_any(normalized, brightness_terms):
+            return "system_brightness"
+
+        settings_terms = ("setting", "settings", "open", "show", "go to", "configure")
+        if entities.get("setting_name") and self._contains_any(normalized, settings_terms):
+            return "system_settings"
+
+        if entities.get("media_title") or normalized.startswith("play "):
+            return "play_media"
+
+        website_terms = ("open", "visit", "go to", "website", "site", "browser")
+        if entities.get("website_url") and self._contains_any(normalized, website_terms):
+            return "open_website"
+        if re.search(r"\b(?:https?://|www\.|\w+\.(?:com|org|net|io|edu))(?:\S*)", normalized) and self._contains_any(
+            normalized,
+            website_terms,
+        ):
+            return "open_website"
+
+        file_terms = (" file", "folder", "document", "pdf", "txt", "open file", "find file", "search file")
+        if self._contains_any(normalized, file_terms):
+            return "file_control"
+
+        if explicit_search_signal:
+            return "web_search"
+
+        close_terms = ("close ", "quit ", "exit ", "terminate ", "kill ")
+        launch_terms = ("open ", "launch ", "start ", "run ")
+        switch_terms = ("switch to", "focus on", "bring ")
+
+        if switch_request:
+            return "switch_app"
+
+        if entities.get("app_name"):
+            if self._contains_any(normalized, close_terms) and not info_request:
+                return "close_app"
+            if self._contains_any(normalized, launch_terms) and not info_request:
+                return "launch_app"
+            if self._contains_any(normalized, switch_terms):
+                return "switch_app"
+
+        if self._contains_any(normalized, close_terms) and not info_request:
+            return "close_app"
+        if self._contains_any(normalized, launch_terms) and not info_request:
+            return "launch_app"
+
+        return intent
+
     def route(
         self,
         intent_result: Dict[str, Any],
@@ -656,7 +1233,18 @@ class Router:
         compute_hint: str | None = None,
     ) -> Dict[str, Any]:
         route_started = time.perf_counter()
-        intent = intent_result.get("intent", "general_qa")
+        entities = dict(entities or {})
+        intent = str(intent_result.get("intent", "general_qa") or "general_qa")
+        confidence = float(intent_result.get("confidence", 0.0) or 0.0)
+        recovered_intent = self._recover_intent_from_text(raw_text, entities, intent, confidence)
+        if recovered_intent != intent:
+            self._trace(
+                "route_intent_recovered",
+                predicted_intent=intent,
+                recovered_intent=recovered_intent,
+                confidence=confidence,
+            )
+            intent = recovered_intent
         self._trace(
             "route_started",
             intent=intent,
@@ -699,9 +1287,64 @@ class Router:
                 )
 
             if intent == "launch_app":
-                return done("launch_app", app_control.launch_app(entities.get("app_name", "")))
+                app_name = str(entities.get("app_name") or "").strip().lower()
+                if not app_name:
+                    app_name = self._extract_app_name_from_text(raw_text)
+                return done("launch_app", app_control.launch_app(app_name))
             if intent == "close_app":
-                return done("close_app", app_control.close_app(entities.get("app_name", "")))
+                app_name = str(entities.get("app_name") or "").strip().lower()
+                if not app_name:
+                    app_name = self._extract_app_name_from_text(raw_text)
+                return done("close_app", app_control.close_app(app_name))
+            if intent == "switch_app":
+                app_name = str(entities.get("app_name") or "").strip().lower()
+                if not app_name:
+                    app_name = self._extract_app_name_from_text(raw_text)
+                return done("switch_app", app_control.switch_to_app(app_name))
+            if intent == "weather_query":
+                normalized = self._normalize_text(raw_text)
+                weather_terms = (
+                    "weather",
+                    "forecast",
+                    "temperature",
+                    "rain",
+                    "snow",
+                    "humidity",
+                    "celsius",
+                    "fahrenheit",
+                    "degrees",
+                )
+                if not self._contains_any(normalized, weather_terms):
+                    if self._contains_any(
+                        normalized,
+                        (
+                            "search ",
+                            "look up",
+                            "lookup",
+                            "google ",
+                            "web search",
+                            "news",
+                            "latest",
+                            "headline",
+                            "headlines",
+                            "update",
+                            "updates",
+                        ),
+                    ):
+                        self._trace("route_weather_guard_redirect", redirected_to="web_search")
+                        intent = "web_search"
+                    else:
+                        self._trace("route_weather_guard_redirect", redirected_to="general_qa")
+                        intent = "general_qa"
+                else:
+                    weather_entities = dict(entities)
+                    weather_entities["raw_text"] = raw_text
+                    return done("weather_query", weather_control.handle(weather_entities))
+
+            if intent == "weather_query":
+                weather_entities = dict(entities)
+                weather_entities["raw_text"] = raw_text
+                return done("weather_query", weather_control.handle(weather_entities))
             if intent == "web_search":
                 if self._is_small_talk(raw_text):
                     intent = "general_qa"
@@ -741,6 +1384,7 @@ class Router:
             if intent == "system_settings":
                 return done("system_settings", system_control.open_settings(entities.get("setting_name")))
             if intent == "file_control":
+                entities.setdefault("search_query", str(raw_text or "").strip())
                 return done("file_control", file_control.handle(entities))
             if intent == "clipboard_action":
                 return done("clipboard_action", clipboard_control.handle(entities))

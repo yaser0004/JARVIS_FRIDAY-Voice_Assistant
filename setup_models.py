@@ -29,6 +29,7 @@ QWEN_FILE_NAME = "Qwen2.5-VL-3B-Instruct-Q8_0.gguf"
 QWEN_MMPROJ_FILE_NAME = "mmproj-Qwen2.5-VL-3B-Instruct-Q8_0.gguf"
 DEFAULT_LLAMA_CPP_VERSION = "0.3.20"
 DEFAULT_NUMPY_VERSION = "1.26.4"
+DEFAULT_OLLAMA_VISION_MODEL = "qwen2.5vl:3b"
 DOWNLOAD_CHUNK_BYTES = 1024 * 1024
 DOWNLOAD_TIMEOUT_SECONDS = 60
 DOWNLOAD_LOG_EVERY_BYTES = 25 * 1024 * 1024
@@ -672,6 +673,44 @@ def download_qwen_gguf() -> None:
     _log_step("Qwen2.5-VL mmproj download complete.")
 
 
+def _ollama_server_reachable(base_url: str) -> tuple[bool, str]:
+    endpoint = str(base_url or "http://127.0.0.1:11434").rstrip("/") + "/api/tags"
+    request = Request(endpoint, headers={"User-Agent": "JARVIS-setup/1.0"})
+    try:
+        with urlopen(request, timeout=5) as response:
+            _ = response.read(256)
+        return True, ""
+    except Exception as exc:
+        return False, str(exc)
+
+
+def setup_ollama_vision_model(model_name: str = DEFAULT_OLLAMA_VISION_MODEL) -> bool:
+    model = str(model_name or "").strip() or DEFAULT_OLLAMA_VISION_MODEL
+    ollama_url = str(os.getenv("JARVIS_OLLAMA_URL", "http://127.0.0.1:11434")).strip()
+
+    _log_step(f"Preparing Ollama vision model setup for '{model}'...")
+    code, stdout, stderr = _run_capture(["ollama", "--version"], timeout_seconds=20)
+    if code != 0:
+        detail = stderr or stdout or "command not found"
+        _log_step(f"Ollama CLI is unavailable: {detail}")
+        _log_step("Install Ollama from https://ollama.com/download and ensure `ollama` is on PATH.")
+        return False
+
+    server_ok, server_error = _ollama_server_reachable(ollama_url)
+    if not server_ok:
+        _log_step(f"Ollama server is not reachable at {ollama_url}: {server_error}")
+        _log_step("Start the Ollama server with `ollama serve` and rerun setup.")
+        return False
+
+    _log_step(f"Pulling Ollama model '{model}'...")
+    if not _run_checked(["ollama", "pull", model]):
+        _log_step("Failed to pull the Ollama vision model.")
+        return False
+
+    _log_step("Ollama vision model is ready.")
+    return True
+
+
 def warm_model_caches() -> None:
     _log_step("Warming faster-whisper cache (medium.en)...")
     try:
@@ -751,11 +790,31 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Print GPU setup commands without executing pip installs.",
     )
+    parser.add_argument(
+        "--setup-ollama-vision",
+        action="store_true",
+        help="Pull the configured Ollama vision model after standard setup steps.",
+    )
+    parser.add_argument(
+        "--only-ollama-vision",
+        action="store_true",
+        help="Run only Ollama vision model setup and skip other downloads.",
+    )
+    parser.add_argument(
+        "--ollama-vision-model",
+        default=DEFAULT_OLLAMA_VISION_MODEL,
+        help=f"Ollama vision model tag to pull (default: {DEFAULT_OLLAMA_VISION_MODEL}).",
+    )
     return parser
 
 
 def main() -> int:
     args = _build_arg_parser().parse_args()
+    ollama_model = str(args.ollama_vision_model).strip() or DEFAULT_OLLAMA_VISION_MODEL
+
+    if args.only_ollama_vision:
+        ok = setup_ollama_vision_model(model_name=ollama_model)
+        return 0 if ok else 2
 
     if args.only_llama_gpu:
         ok = configure_llama_gpu(
@@ -779,6 +838,11 @@ def main() -> int:
         )
         if not ok:
             _log_step("llama GPU setup did not complete; JARVIS will continue using CPU LLM fallback.")
+            return 2
+
+    if args.setup_ollama_vision:
+        ok = setup_ollama_vision_model(model_name=ollama_model)
+        if not ok:
             return 2
 
     _log_step("All model setup steps completed.")

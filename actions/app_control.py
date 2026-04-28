@@ -109,6 +109,33 @@ def _normalize_key(value: str) -> str:
     return re.sub(r"\s+", " ", cleaned)
 
 
+def _sanitize_app_target(value: str) -> str:
+    cleaned = _normalize_key(str(value or ""))
+    cleaned = re.sub(
+        r"\b(?:opened|running|currently|current|active|the|my|this|that|it|app|application|program|window)\b",
+        " ",
+        cleaned,
+    )
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    if cleaned in {"", "this", "that", "it", "current", "active", "opened", "running"}:
+        return ""
+    return cleaned
+
+
+def _window_match_score(query: str, title: str) -> float:
+    normalized_query = _normalize_key(query)
+    normalized_title = _normalize_key(title)
+    if not normalized_query or not normalized_title:
+        return 0.0
+    if normalized_query == normalized_title:
+        return 1.0
+    if normalized_query in normalized_title:
+        return 0.95
+    if normalized_title in normalized_query:
+        return 0.9
+    return SequenceMatcher(a=normalized_query, b=normalized_title).ratio()
+
+
 def _app_record(kind: str, path: str, source: str) -> Dict[str, str]:
     return {
         "kind": kind,
@@ -353,7 +380,7 @@ def launch_app(app_name: str) -> Dict[str, Any]:
 
 def close_app(app_name: str) -> Dict[str, Any]:
     try:
-        target = (app_name or "").strip().lower()
+        target = _sanitize_app_target(app_name)
         if not target:
             return _response(False, "Please specify an app name to close.")
 
@@ -385,7 +412,10 @@ def close_app(app_name: str) -> Dict[str, Any]:
             for token in target_tokens:
                 if not token:
                     continue
-                if token in proc_blob or token in proc_tokens:
+                if token in proc_tokens:
+                    should_kill = True
+                    break
+                if len(token) >= 4 and token in proc_blob:
                     should_kill = True
                     break
 
@@ -414,14 +444,31 @@ def list_running_apps() -> List[str]:
 
 def switch_to_app(app_name: str) -> Dict[str, Any]:
     try:
-        matches = gw.getWindowsWithTitle(app_name)
-        if not matches:
-            return _response(False, f"I could not find a window for {app_name}.")
-        window = matches[0]
+        target = _sanitize_app_target(app_name)
+        if not target:
+            return _response(False, "Please specify an app name to switch to.")
+
+        windows = [window for window in gw.getAllWindows() if str(getattr(window, "title", "")).strip()]
+        ranked: list[tuple[float, Any]] = []
+        for window in windows:
+            title = str(getattr(window, "title", "") or "").strip()
+            score = _window_match_score(target, title)
+            if score >= 0.55:
+                ranked.append((score, window))
+
+        if not ranked:
+            direct = gw.getWindowsWithTitle(target)
+            ranked = [(0.6, window) for window in direct]
+
+        if not ranked:
+            return _response(False, f"I could not find an open window for {target}.")
+
+        ranked.sort(key=lambda item: item[0], reverse=True)
+        window = ranked[0][1]
         if window.isMinimized:
             window.restore()
         window.activate()
-        return _response(True, f"Switched to {app_name}.")
+        return _response(True, f"Switched to {target}.")
     except Exception as exc:
         return _response(False, f"I could not switch to {app_name}: {exc}", {"error": str(exc)})
 

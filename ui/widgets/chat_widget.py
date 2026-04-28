@@ -18,12 +18,20 @@ from ui.theme import FONT_BODY, FONT_MONO
 
 
 class ChatBubble(QWidget):
-    def __init__(self, role: str, text: str, intent: Optional[str] = None, parent=None) -> None:
+    def __init__(
+        self,
+        role: str,
+        text: str,
+        intent: Optional[str] = None,
+        assistant_name: str = "JARVIS",
+        parent=None,
+    ) -> None:
         super().__init__(parent)
         self.role = role
         self.intent = intent
 
-        role_text = "JARVIS" if str(role).strip().lower() == "assistant" else role.upper()
+        normalized_assistant = str(assistant_name or "JARVIS").strip().upper() or "JARVIS"
+        role_text = normalized_assistant if str(role).strip().lower() == "assistant" else role.upper()
         self.role_label = QLabel(role_text)
         self.role_label.setFont(FONT_MONO)
         self.role_label.setStyleSheet("color: rgba(144, 184, 194, 160);")
@@ -54,6 +62,12 @@ class ChatBubble(QWidget):
         self.opacity = QGraphicsOpacityEffect(self)
         self.setGraphicsEffect(self.opacity)
         self.opacity.setOpacity(0.0)
+
+    def set_assistant_name(self, assistant_name: str) -> None:
+        if str(self.role).strip().lower() != "assistant":
+            return
+        normalized_assistant = str(assistant_name or "JARVIS").strip().upper() or "JARVIS"
+        self.role_label.setText(normalized_assistant)
 
     def set_target_width(self, width: int) -> None:
         target = max(160, int(width))
@@ -86,6 +100,7 @@ class ChatWidget(QScrollArea):
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
         self.setWidgetResizable(True)
+        self._assistant_name = "JARVIS"
 
         self.container = QWidget(self)
         self.layout = QVBoxLayout(self.container)
@@ -129,7 +144,7 @@ class ChatWidget(QScrollArea):
             self._schedule_scroll_to_bottom()
 
     def add_message(self, role: str, text: str, intent: Optional[str] = None) -> None:
-        bubble = ChatBubble(role, text, intent=intent)
+        bubble = ChatBubble(role, text, intent=intent, assistant_name=self._assistant_name)
         row = QWidget(self.container)
         row_layout = QHBoxLayout(row)
         row_layout.setContentsMargins(0, 0, 0, 0)
@@ -154,6 +169,16 @@ class ChatWidget(QScrollArea):
         self.container.adjustSize()
         self._animate_row(row, role)
         self._schedule_scroll_to_bottom()
+
+    def set_assistant_name(self, assistant_name: str) -> None:
+        normalized_assistant = str(assistant_name or "JARVIS").strip().upper() or "JARVIS"
+        if normalized_assistant == self._assistant_name:
+            return
+        self._assistant_name = normalized_assistant
+        for row in self._items:
+            bubble = self._extract_bubble(row)
+            if bubble is not None:
+                bubble.set_assistant_name(normalized_assistant)
 
     def _scroll_to_bottom(self) -> None:
         bar = self.verticalScrollBar()

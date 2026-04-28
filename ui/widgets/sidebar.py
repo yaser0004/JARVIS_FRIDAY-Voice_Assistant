@@ -51,10 +51,10 @@ class Sidebar(QWidget):
         root.setContentsMargins(14, 14, 14, 14)
         root.setSpacing(10)
 
-        logo = QLabel("JARVIS")
-        logo.setFont(FONT_DISPLAY)
-        logo.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        root.addWidget(logo)
+        self.logo_label = QLabel("JARVIS")
+        self.logo_label.setFont(FONT_DISPLAY)
+        self.logo_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        root.addWidget(self.logo_label)
 
         self.status_label = QLabel("IDLE")
         self.status_label.setFont(FONT_MONO)
@@ -158,6 +158,10 @@ class Sidebar(QWidget):
     def _toggle_intent_panel(self, expanded: bool) -> None:
         self.intent_panel.setVisible(expanded)
         self.intent_toggle_btn.setText("Intent Identifier v" if expanded else "Intent Identifier >")
+
+    def set_brand_name(self, brand_name: str) -> None:
+        normalized_brand = str(brand_name or "JARVIS").strip().upper() or "JARVIS"
+        self.logo_label.setText(normalized_brand)
 
     def set_state(self, state: str) -> None:
         self.status_label.setText(state.upper())
