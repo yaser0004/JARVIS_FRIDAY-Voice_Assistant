@@ -19,7 +19,7 @@ from core.context_manager import ContextManager
 from core.config import log_performance
 from core.runtime_settings import load_runtime_settings, save_runtime_settings
 from core.session_logging import trace_event, trace_exception
-from llm.qwen_bridge import QwenBridge
+from llm.gemma_bridge import GemmaBridge
 from memory.sqlite_store import SQLiteStore
 from memory.vector_store import VectorStore
 from nlp import preprocessor
@@ -118,9 +118,9 @@ class JarvisPipeline(QObject):
         self._initialized = False
         self._cancel_requested = False
         self._intent_model_name = os.getenv("JARVIS_INTENT_MODEL", "DistilBERT")
-        self._web_verified_mode = False
         self._wakeword_config = load_wakeword_config()
         self._runtime_settings = load_runtime_settings()
+        self._web_verified_mode = bool(self._runtime_settings.get("realtime_web_enabled", False))
         self.tts_enabled = bool(self._runtime_settings.get("tts_enabled", True))
         self._tts_profile = str(self._runtime_settings.get("tts_profile", "female") or "female").strip().lower()
         if self._tts_profile not in {"female", "male"}:
@@ -142,7 +142,7 @@ class JarvisPipeline(QObject):
         self.stt: SpeechToText | None = None
         self.tts: TextToSpeech | None = None
         self.wake_word: WakeWordDetector | None = None
-        self.llm: QwenBridge | None = None
+        self.llm: GemmaBridge | None = None
         self.context: ContextManager | None = None
         self.sqlite: SQLiteStore | None = None
         self.vector_store: VectorStore | None = None
@@ -264,7 +264,7 @@ class JarvisPipeline(QObject):
                 ("Loading entity extractor", lambda: EntityExtractor()),
                 ("Loading speech-to-text", lambda: SpeechToText(compute_mode=self._compute_mode)),
                 ("Loading text-to-speech", lambda: TextToSpeech(profile=self._tts_profile)),
-                ("Preparing LLM bridge", lambda: QwenBridge(compute_mode=self._compute_mode)),
+                ("Preparing LLM bridge", lambda: GemmaBridge(compute_mode=self._compute_mode)),
                 ("Loading conversation memory", lambda: ContextManager()),
                 ("Loading SQLite store", lambda: SQLiteStore()),
                 ("Loading vector store", lambda: VectorStore()),
@@ -327,7 +327,9 @@ class JarvisPipeline(QObject):
             self._warm_stt_async()
             self._init_wakeword_async(auto_start=bool(self._wakeword_config.get("enabled", False)))
             self._bootstrap_indexes_async()
-            self._prewarm_llm_startup()
+            # Prewarm loads a multi-GB GGUF; keep it off the path to ready.emit()
+            # so the UI accepts input as soon as the modules are wired.
+            threading.Thread(target=self._prewarm_llm_startup, daemon=True).start()
         except Exception as exc:
             trace_exception("backend.pipeline", exc, event="initialize_fatal")
             log_performance("pipeline_init_fatal", 0.0, str(exc))
@@ -564,6 +566,8 @@ class JarvisPipeline(QObject):
     def set_realtime_web_enabled(self, enabled: bool) -> None:
         self._web_verified_mode = bool(enabled)
         self._trace("set_realtime_web_enabled", enabled=self._web_verified_mode)
+        self._runtime_settings["realtime_web_enabled"] = self._web_verified_mode
+        self._runtime_settings = save_runtime_settings(self._runtime_settings)
         if self.router is not None:
             self.router.set_realtime_web_enabled(self._web_verified_mode)
 
@@ -584,7 +588,9 @@ class JarvisPipeline(QObject):
         self._runtime_settings = save_runtime_settings(self._runtime_settings)
         apply_compute_environment(self._compute_mode)
         self._apply_compute_mode_to_modules()
-        self._refresh_compute_capabilities()
+        # Capability detection spawns a subprocess probe (up to 45s); it must
+        # never run on the UI thread that calls this from the settings dialog.
+        self._refresh_compute_capabilities_async()
         return self.get_compute_settings()
 
     def _refresh_compute_capabilities(self) -> None:
@@ -684,67 +690,35 @@ class JarvisPipeline(QObject):
         if bridge is None and self.router is not None:
             bridge = getattr(self.router, "llm", None)
 
-        router_vision_status: Dict[str, Any] = {}
-        if self.router is not None and hasattr(self.router, "get_vision_runtime_status"):
-            try:
-                router_vision_status = dict(self.router.get_vision_runtime_status())
-            except Exception:
-                router_vision_status = {}
-
-        def _apply_router_vision(payload: Dict[str, Any]) -> Dict[str, Any]:
-            preferred = str(router_vision_status.get("preferred_backend") or "").strip().lower()
-            if preferred:
-                payload["vision_backend_preference"] = preferred
-
-            ollama_status = router_vision_status.get("ollama")
-            if isinstance(ollama_status, dict):
-                ollama_available = bool(ollama_status.get("available", False))
-                payload["ollama_vision_available"] = ollama_available
-                model_name = str(ollama_status.get("model") or "").strip()
-                if model_name:
-                    payload["ollama_vision_model"] = model_name
-                message = str(ollama_status.get("message") or "").strip()
-                if message:
-                    payload["ollama_vision_message"] = message
-                if preferred == "ollama":
-                    payload["supports_vision"] = ollama_available
-                    payload["vision_backend"] = "ollama"
-                elif preferred == "auto" and ollama_available:
-                    payload["supports_vision"] = True
-                    payload["vision_backend"] = "ollama"
-
-            if "vision_backend" not in payload:
-                payload["vision_backend"] = "qwen2.5-vl"
-            return payload
-
         if bridge is None:
-            status = {
+            return {
                 "state": "unavailable",
                 "mode": "none",
                 "message": "LLM bridge is unavailable.",
                 "supports_vision": False,
+                "vision_backend": "gemma",
             }
-            return _apply_router_vision(status)
 
         if hasattr(bridge, "get_status"):
             try:
                 status = dict(bridge.get_status())
                 if "state" not in status:
                     status["state"] = "ready" if bool(bridge.is_ready()) else "initializing"
-                return _apply_router_vision(status)
+                status.setdefault("vision_backend", "gemma")
+                return status
             except Exception:
                 pass
 
         ready = bool(bridge.is_ready()) if hasattr(bridge, "is_ready") else False
         available = bool(bridge.is_available()) if hasattr(bridge, "is_available") else ready
         supports_vision = bool(bridge.supports_vision()) if hasattr(bridge, "supports_vision") else False
-        status = {
+        return {
             "state": "ready" if ready else ("initializing" if available else "unavailable"),
             "mode": "worker" if ready and getattr(bridge, "llm", None) is None else "in_process",
             "message": "LLM ready." if ready else "LLM is warming up.",
             "supports_vision": supports_vision,
+            "vision_backend": "gemma",
         }
-        return _apply_router_vision(status)
 
     def update_wakeword_settings(
         self,
@@ -888,10 +862,10 @@ class JarvisPipeline(QObject):
         filtered = self._strip_activation_phrase(text)
         if not filtered or self._looks_like_wake_only(filtered):
             self._set_state("IDLE")
-            self._trace("wake_followup_filtered_empty", transcript_text=text)
+            self._trace("wake_followup_filtered_empty", transcript_chars=len(text))
             return ""
 
-        self._trace("wake_followup_received", transcript_text=text, filtered_text=filtered)
+        self._trace("wake_followup_received", transcript_chars=len(text), filtered_chars=len(filtered))
 
         return filtered
 
@@ -1121,14 +1095,16 @@ class JarvisPipeline(QObject):
         tts_future: Future[Any] | None = None
         request_start = time.perf_counter()
 
-        cleaned_raw = preprocessor.clean(text)
-        cleaned = normalize_command_text(cleaned_raw) or cleaned_raw
+        # Normalize BEFORE cleaning: the normalizer's patterns need intact
+        # apostrophes/punctuation ("can't", "i'd like you to"), which clean() strips.
+        normalized_raw = normalize_command_text(text) or str(text or "").strip().lower()
+        cleaned = preprocessor.clean(normalized_raw)
         compute_hint = choose_device_for_query(cleaned, self._compute_mode)
         self._trace(
             "process_text_preprocessed",
             cleaned_chars=len(cleaned),
             compute_hint=compute_hint,
-            normalized=bool(cleaned != cleaned_raw),
+            normalized=bool(normalized_raw != str(text or "").strip().lower()),
         )
         if self.intent_classifier is not None and hasattr(self.intent_classifier, "set_request_device_hint"):
             try:
@@ -1156,7 +1132,7 @@ class JarvisPipeline(QObject):
 
         entity_start = time.perf_counter()
         if self.entity_extractor is not None:
-            entities = self.entity_extractor.extract_entities(cleaned, intent_result["intent"])
+            entities = self.entity_extractor.extract_entities(cleaned, intent_result["intent"], original_text=text)
         else:
             entities = {}
         entity_ms = (time.perf_counter() - entity_start) * 1000
@@ -1180,12 +1156,19 @@ class JarvisPipeline(QObject):
         route_start = time.perf_counter()
         if self.router is not None:
             context_window = self.context.get_window() if self.context is not None else []
+            # The complexity-based `compute_hint` above is tuned for cheap ONNX
+            # intent classification, where CPU vs GPU barely matters. LLM decode
+            # is a different cost profile entirely: even "simple" queries take
+            # several seconds on CPU, while GPU is dramatically faster and its
+            # backend is already verified working, so the LLM always prefers
+            # GPU in auto mode (with automatic CPU fallback on GPU failure).
+            llm_compute_hint = "cpu" if self._compute_mode == "cpu" else "gpu"
             action_result = self.router.route(
                 intent_result,
                 entities,
                 text,
                 context_window,
-                compute_hint=compute_hint,
+                compute_hint=llm_compute_hint,
             )
         else:
             action_result = {

@@ -93,6 +93,7 @@ class JarvisMainWindow(QMainWindow):
         self._last_image_source = ""
         self._resume_wake_after_hold = False
         self._is_shutting_down = False
+        self._drag_pos = None
         self._assistant_name = "JARVIS"
         self._screen_capture = ScreenCapture()
         self._webcam_capture = WebcamCapture()
@@ -1563,8 +1564,8 @@ class JarvisMainWindow(QMainWindow):
                 self,
                 f"{self._assistant_name} Settings",
                 "GPU mode is enabled for supported components, but your local LLM runtime "
-                "(llama-cpp-python) does not currently support GPU offload in this environment. "
-                "LLM responses will run on CPU until GPU-enabled llama-cpp is installed.",
+                "(LiteRT-LM) does not currently support GPU offload in this environment. "
+                "LLM responses will run on CPU until a Vulkan-compatible GPU driver is available.",
             )
 
         sensitivity = float(wake_sensitivity_input.value())

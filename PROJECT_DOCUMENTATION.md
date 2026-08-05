@@ -25,9 +25,9 @@
    - 5.4 [Text Preprocessor](#54-text-preprocessor)
    - 5.5 [Conversation Normalizer](#55-conversation-normalizer)
 6. [Large Language Model Integration (`llm/`)](#6-large-language-model-integration)
-   - 6.1 [QwenBridge](#61-qwenbridge)
-   - 6.2 [Qwen Worker Process](#62-qwen-worker-process)
-   - 6.3 [Model Resolution & Auto-Switch](#63-model-resolution--auto-switch)
+   - 6.1 [GemmaBridge](#61-gemmabridge)
+   - 6.2 [Gemma Worker Process](#62-gemma-worker-process)
+   - 6.3 [Model File & Inference Parameters](#63-model-file--inference-parameters)
 7. [Speech Processing (`speech/`)](#7-speech-processing)
    - 7.1 [Speech-to-Text (STT)](#71-speech-to-text-stt)
    - 7.2 [Text-to-Speech (TTS)](#72-text-to-speech-tts)
@@ -77,17 +77,17 @@
 
 ## 1. Executive Summary
 
-**JARVIS** (Just A Really Very Intelligent System) is a production-grade, fully offline AI desktop assistant designed exclusively for the Windows platform. The system provides hands-free voice interaction, multimodal vision understanding, intelligent natural language processing, and deep system automation — all running entirely on local hardware without any cloud dependency.
+**JARVIS** (Just A Really Very Intelligent System) is a production-grade, local-first AI desktop assistant for Windows and Linux. All OS-specific behavior is isolated in `platform_adapters/` (see section 2a). The system provides hands-free voice interaction, multimodal vision understanding, intelligent natural language processing, and deep system automation — all running entirely on local hardware without any cloud dependency.
 
 ### Key Differentiators
 
 | Feature | Description |
 |---|---|
-| **100% Offline** | All ML inference (LLM, STT, TTS, intent classification, vision) runs locally. No data leaves the user's machine. |
+| **Local-first inference** | LLM, STT, intent classification, and vision all run locally. One exception: the default TTS backend (`auto`) tries Edge TTS first, which sends response text to Microsoft. Set `JARVIS_TTS_BACKEND=kokoro` for fully local synthesis. |
 | **Hybrid Execution Model** | Deterministic Python scripts handle known commands at millisecond latency; only ambiguous or general queries are routed to the local LLM. |
-| **Multimodal Vision** | Qwen2.5-VL GGUF model enables real-time screen analysis, webcam understanding, and arbitrary image Q&A with a custom CNN fallback classifier. |
+| **Multimodal Vision** | Gemma 4 E2B (via LiteRT-LM) enables real-time screen analysis, webcam understanding, and arbitrary image Q&A with a custom CNN fallback classifier. |
 | **Adaptive Compute** | Automatic CPU/GPU switching based on query complexity scoring, with runtime fallback, cooldown safeguards, and per-module device propagation. |
-| **Multi-Voice TTS** | Three-cascading TTS backends (Edge TTS, Kokoro-82M, SAPI) with male/female voice profiles. |
+| **Multi-Voice TTS** | Cascading TTS backends (Edge TTS, Kokoro-82M, then the OS fallback: SAPI on Windows, `spd-say`/`espeak-ng` on Linux) with male/female voice profiles. |
 | **Production Packaging** | Nuitka-compiled standalone `.exe` with all assets bundled — zero Python dependency on the end-user machine. |
 | **Session Telemetry** | Structured JSONL trace logging with dual-stream stdout/stderr capture, exception hooks, and performance metric instrumentation. |
 | **Wake Word System** | Dual-mode wake word detection (neural openWakeWord + phrase fallback) with multi-turn follow-up conversation support. |
@@ -97,12 +97,12 @@
 | Layer | Technology |
 |---|---|
 | GUI Framework | PyQt6 (QMainWindow + QObject signals) |
-| LLM Runtime | llama-cpp-python (GGUF, subprocess-isolated) |
+| LLM Runtime | LiteRT-LM (`litert-lm-api`, subprocess-isolated) |
 | Speech-to-Text | faster-whisper (CTranslate2 backend) |
 | Text-to-Speech | Edge TTS / Kokoro-82M / Windows SAPI |
 | Intent Classification | ONNX Runtime (DistilBERT) + LinearSVC fallback |
 | Entity Extraction | spaCy + regex + heuristic rules |
-| Vision | Qwen2.5-VL via llama-cpp + custom 4-layer CNN |
+| Vision | Gemma 4 E2B via LiteRT-LM + custom 4-layer CNN fallback |
 | NLP | spaCy, GloVe embeddings, regex patterns |
 | Memory | SQLite + ChromaDB (vector) + sentence-transformers |
 | Build | Nuitka (standalone C compilation) |
@@ -116,7 +116,7 @@
 | Total source files | ~40+ Python modules |
 | Core pipeline (`pipeline.py`) | 1,357 lines |
 | Main window (`main_window.py`) | 1,663 lines |
-| LLM bridge (`qwen_bridge.py`) | 1,089 lines |
+| LLM bridge (`gemma_bridge.py`) | ~700 lines |
 | Router (`router.py`) | 817 lines |
 | Model setup utility | 791 lines |
 | Intent classifier | 533 lines |
@@ -144,7 +144,7 @@ JARVIS follows a **modular pipeline architecture** where each subsystem operates
 │                       │       └──────────────┘                    │
 │                       ▼                                            │
 │              ┌────────────────┐    ┌───────────────┐              │
-│              │  QwenBridge    │    │ Qwen Worker   │              │
+│              │  GemmaBridge   │    │ Gemma Worker  │              │
 │              │  (LLM Control) │───→│ (Subprocess)  │              │
 │              └───────┬────────┘    └───────────────┘              │
 │                      │                                             │
@@ -195,7 +195,7 @@ User Input (Voice/Text)
 │              │────→│ Verified Web Intelligence│  (multi-source synthesis)
 │              │     └─────────────────────────┘
 │              │     ┌─────────────────────────┐
-│              │────→│ LLM (QwenBridge)        │  (generative, ~1-8s)
+│              │────→│ LLM (GemmaBridge)       │  (generative, ~1-8s)
 │              │     └─────────────────────────┘
 │              │     ┌─────────────────────────┐
 │              │────→│ Small-Talk Fallback      │  (predefined responses)
@@ -210,6 +210,50 @@ User Input (Voice/Text)
 │  TTS Output  │  ← Spoken response (Edge TTS / Kokoro / SAPI)
 └──────────────┘
 ```
+
+---
+
+## 2a. Platform Adapter Layer
+
+Every OS-specific operation lives in `platform_adapters/`; nothing else in the
+codebase calls Windows- or Linux-specific APIs.
+
+```
+platform_adapters/
+├── __init__.py     # selects `backend` once, by sys.platform
+├── windows.py      # pycaw/COM, screen_brightness_control, PowerShell, os.startfile, pygetwindow
+└── linux.py        # pactl, brightnessctl, systemctl/loginctl, nmcli, bluetoothctl, xdg-open, wmctrl
+```
+
+**Selection.** `platform_adapters/__init__.py` picks the module at import time
+and exposes it as `backend`. Action modules do `from platform_adapters import
+backend` and call `backend.<function>`; both backends expose the same function
+names. There is no abstract base class — two implementations chosen once at
+import do not need one.
+
+**Responsibility split.** Adapters contain only the OS call. Everything
+platform-neutral — level parsing, fuzzy app matching, the power-confirmation
+flow, response formatting — stays in `actions/`. This is why adding a third
+platform means writing one module, not touching the action layer.
+
+**Adapter surface.** `get_volume`, `set_volume_level`, `set_mute`,
+`get_brightness`, `set_brightness`, `shutdown`, `restart`, `sleep`, `hibernate`,
+`lock`, `monitor_off`, `open_settings_page`, `toggle_wifi`, `toggle_bluetooth`,
+`current_wifi_name`, `current_bluetooth_name`, `open_path`, `scan_apps`,
+`find_executable`, `launch_target`, `list_windows`, `find_windows_by_title`,
+`activate_window`, plus the `DEFAULT_APP_MAP` / `DEFAULT_APP_KIND` constants.
+
+**Failure model.** Linux capabilities shell out to desktop tools that may not be
+installed. A missing tool raises `RuntimeError` naming the package (or returns a
+`(False, reason)` tuple for the toggle functions). The action layer already wraps
+these into spoken error responses, so a missing tool degrades one capability
+instead of breaking the assistant. See the Linux setup table in `README.md` for
+what degrades without which package.
+
+**Known platform gaps.** Window switching uses `wmctrl` and therefore requires
+X11; on Wayland it returns an explanatory failure. Screen capture tries
+`pyautogui` first and falls back to `gnome-screenshot` (not the
+xdg-desktop-portal API).
 
 ---
 
@@ -243,8 +287,9 @@ JARVIS/
 │
 ├── llm/                       # Local LLM integration
 │   ├── __init__.py
-│   ├── qwen_bridge.py         # Main LLM interface (in-process + worker) (1,089 lines)
-│   └── qwen_worker.py         # Isolated subprocess for LLM inference (284 lines)
+│   ├── system_prompt.py       # Shared default system prompt constant
+│   ├── gemma_bridge.py        # Main LLM interface (in-process + worker), LiteRT-LM + Gemma 4 E2B
+│   └── gemma_worker.py        # Isolated subprocess for LLM inference
 │
 ├── speech/                    # Voice I/O
 │   ├── __init__.py
@@ -301,10 +346,8 @@ JARVIS/
 │       ├── label_encoder.pkl  # Sklearn LabelEncoder
 │       └── tokenizer.pkl      # Tokenizer artifact
 │
-├── models/                    # LLM GGUF model files
-│   ├── Qwen2.5-VL-3B-Instruct-Q8_0.gguf
-│   ├── mmproj-Qwen2.5-VL-3B-Instruct-Q8_0.gguf
-│   └── qwen2.5-3b-instruct-q4_k_m.gguf
+├── models/                    # LLM model files
+│   └── gemma-4-E2B-it.litertlm  # Gemma 4 E2B (text + vision), LiteRT-LM format
 │
 ├── data/                      # Runtime data
 │   ├── glove/                 # GloVe word embeddings
@@ -375,7 +418,7 @@ JarvisPipeline.initialize()
      ├── Step 2: EntityExtractor()                              → 25%
      ├── Step 3: SpeechToText(compute_mode)                     → 37%
      ├── Step 4: TextToSpeech(profile)                          → 50%
-     ├── Step 5: QwenBridge(compute_mode)                       → 62%
+     ├── Step 5: GemmaBridge(compute_mode)                      → 62%
      ├── Step 6: ContextManager()                               → 75%
      ├── Step 7: SQLiteStore()                                  → 87%
      ├── Step 8: VectorStore()                                  → 100%
@@ -552,9 +595,7 @@ Centralizes all filesystem paths, model locations, and performance targets.
 | `TOKENIZER_PATH` | `ml/models/tokenizer.pkl` | Tokenizer artifact |
 | `LABEL_ENCODER_PATH` | `ml/models/label_encoder.pkl` | Label encoder |
 | `GLOVE_PATH` | `data/glove/glove.6B.100d.txt` | GloVe word vectors |
-| `QWEN_VL_GGUF_PATH` | `models/Qwen2.5-VL-3B-Instruct-Q8_0.gguf` | Vision-language model |
-| `QWEN_VL_MMPROJ_PATH` | `models/mmproj-Qwen2.5-VL-3B-Instruct-Q8_0.gguf` | Vision projector |
-| `QWEN_TEXT_FALLBACK_GGUF_PATH` | `models/qwen2.5-3b-instruct-q4_k_m.gguf` | Text-only fallback |
+| `GEMMA_LITERTLM_PATH` | `models/gemma-4-E2B-it.litertlm` | Text + vision model (single file) |
 | `CNN_VISION_WEIGHTS_PATH` | `ml/models/cnn_vision/cnn_scratch.pt` | CNN weights |
 | `CNN_VISION_LABELS_PATH` | `ml/models/cnn_vision/labels.json` | CNN class labels |
 
@@ -696,7 +737,7 @@ detect_compute_capabilities()
     ├── PyTorch CUDA availability (torch.cuda.is_available())
     ├── GPU device name (torch.cuda.get_device_name(0))
     ├── GPUtil GPU count and name
-    ├── llama-cpp GPU offload (subprocess probe → llama_supports_gpu_offload())
+    ├── LiteRT-LM GPU backend (Vulkan/Metal runtime presence check, model-free)
     ├── ctranslate2 CUDA device count
     └── Windows CUDA DLL preflight check
 ```
@@ -979,7 +1020,7 @@ The Router is the decision engine that maps classified intents to concrete actio
 
 | Attribute | Type | Default | Description |
 |---|---|---|---|
-| `llm` | `QwenBridge | None` | Passed | LLM reference for generative queries |
+| `llm` | `GemmaBridge | None` | Passed | LLM reference for generative queries |
 | `cancel_callback` | `Callable` | Passed | Pipeline's cancel function |
 | `_llm_retry_cooldown_s` | `float` | `1.5` | Seconds between LLM re-init attempts |
 | `_response_verbosity` | `str` | `"normal"` | Current verbosity setting |
@@ -1199,11 +1240,16 @@ normalize_command_text(text)
 
 ## 6. Large Language Model Integration
 
-### 6.1 QwenBridge
+JARVIS runs a single local model, **Gemma 4 E2B** (`gemma-4-E2B-it.litertlm`),
+through Google's **LiteRT-LM** runtime (`litert-lm-api` on PyPI). Gemma 4 E2B
+is natively multimodal (text + vision in one checkpoint), so there is no
+separate vision model, no mmproj file, and no runtime model-swapping — a
+simplification versus the previous two-GGUF Qwen setup.
 
-**File:** `llm/qwen_bridge.py`
-**Class:** `QwenBridge`
-**Lines of Code:** 1,089
+### 6.1 GemmaBridge
+
+**File:** `llm/gemma_bridge.py`
+**Class:** `GemmaBridge`
 
 The primary interface for local LLM inference, supporting both **in-process** and **subprocess worker** execution modes.
 
@@ -1211,8 +1257,8 @@ The primary interface for local LLM inference, supporting both **in-process** an
 
 | Mode | Description | Use Case |
 |---|---|---|
-| **In-Process** | `llama-cpp` loaded directly in the main Python process | Development, debugging |
-| **Worker Subprocess** | Isolated `qwen_worker.py` process communicating via JSON-over-stdio | Production (default, more stable) |
+| **In-Process** | `litert_lm.Engine` loaded directly in the main Python process | Development, debugging |
+| **Worker Subprocess** | Isolated `gemma_worker.py` process communicating via JSON-over-stdio | Production (default, more stable) |
 
 #### Model Resolution
 
@@ -1221,22 +1267,15 @@ _resolve_model_path()
     │
     ├── $JARVIS_LLM_MODEL_PATH set? → Use explicit path
     │
-    ├── Qwen2.5-VL GGUF exists? → Use VL model (supports vision)
-    │
-    ├── Qwen text-only GGUF exists? → Use text fallback
-    │
-    └── Return preferred path (will error on load)
+    └── Otherwise → GEMMA_LITERTLM_PATH (models/gemma-4-E2B-it.litertlm)
 ```
 
-#### Auto Model Switching
-
-The `_auto_model_switch` feature dynamically switches between the **vision model** (Qwen2.5-VL) and the lighter **text-only model** based on request type:
-
-- **Image requests** → Loads VL model + mmproj file
-- **Text requests** → Loads lightweight text-only model for faster inference
-- **Model switch** → Gracefully shuts down current runtime, loads new model
-
 #### GPU Offloading Strategy
+
+LiteRT-LM's GPU backend runs on Vulkan (Windows/Linux) or Metal (macOS), not
+CUDA. `GemmaBridge._detect_gpu_backend_supported()` does a cheap, model-free
+check for a Vulkan runtime (`vulkan-1.dll` / `libvulkan.so.1`) at startup;
+the per-request backend choice otherwise follows the same policy as before:
 
 ```
 _select_gpu_for_request(user_message, device_hint)
@@ -1256,7 +1295,8 @@ _select_gpu_for_request(user_message, device_hint)
 
 #### Incomplete Response Completion
 
-The bridge detects truncated LLM responses and automatically issues a continuation prompt:
+`max_output_tokens` in LiteRT-LM is a hard cap like the old GGUF `max_tokens`,
+so the same mid-sentence truncation guard is kept:
 
 1. Check if response ends mid-sentence (missing terminal punctuation)
 2. Issue continuation: "Continue from your previous answer without repeating yourself."
@@ -1271,7 +1311,7 @@ The bridge detects truncated LLM responses and automatically issues a continuati
 | Response timeout | `JARVIS_LLM_WORKER_RESPONSE_TIMEOUT_S` | `45` | Seconds to wait for generation |
 | Vision timeout | `JARVIS_LLM_VISION_TIMEOUT_S` | `240` | Extended timeout for vision inference |
 | CPU max tokens | `JARVIS_LLM_MAX_TOKENS_CPU` | `160` | Token limit when running on CPU |
-| Context turns | `JARVIS_LLM_CONTEXT_TURNS` | `2` | Conversation history turns sent to LLM |
+| Context turns | `JARVIS_LLM_CONTEXT_TURNS` | `5` (matches `CONTEXT_WINDOW_SIZE`) | Conversation history turns sent to LLM |
 | GPU retry cooldown | `JARVIS_GPU_RETRY_COOLDOWN` | `60` | Seconds before retrying GPU after failure |
 | Auto-switch cooldown | `JARVIS_AUTO_COMPUTE_SWITCH_COOLDOWN` | `15` | Seconds between compute mode switches |
 
@@ -1287,16 +1327,16 @@ The bridge detects truncated LLM responses and automatically issues a continuati
 
 ---
 
-### 6.2 Qwen Worker Process
+### 6.2 Gemma Worker Process
 
-**File:** `llm/qwen_worker.py`
-**Lines of Code:** 284
+**File:** `llm/gemma_worker.py`
 
-An isolated subprocess that loads the LLM in its own process space, communicating with the parent via JSON-over-stdio. This architecture:
+An isolated subprocess that loads the model in its own process space, communicating with the parent via JSON-over-stdio. This architecture:
 
 - Prevents GPU driver crashes from taking down the main UI process
 - Allows force-termination of stuck inference without affecting the application
-- Isolates `llama-cpp` memory from the PyQt6 event loop
+- Isolates the native LiteRT-LM runtime from the PyQt6 event loop
+- Suppresses LiteRT-LM's verbose native logging (`set_min_log_severity(ERROR)`) so it doesn't pollute the JSON stdout stream
 
 #### Communication Protocol
 
@@ -1332,25 +1372,28 @@ An isolated subprocess that loads the LLM in its own process space, communicatin
 
 ---
 
-### 6.3 Model Resolution & Auto-Switch
+### 6.3 Model File & Inference Parameters
 
-#### Supported Model Files
+#### Model File
 
 | File | Description | Required |
 |---|---|---|
-| `Qwen2.5-VL-3B-Instruct-Q8_0.gguf` | Vision-Language model (multimodal) | For vision features |
-| `qwen2.5-3b-instruct-q4_k_m.gguf` | Text-only instruct model | For text-only queries |
-| `mmproj-Qwen2.5-VL-3B-Instruct-Q8_0.gguf` | Multimodal vision projector | For vision features |
+| `gemma-4-E2B-it.litertlm` | Gemma 4 E2B, quad-modal (text + vision + audio input, text output) | Always — text and vision both run through this one file |
+
+#### API Notes (`litert_lm` Python package)
+
+- `Engine(model_path, backend=Backend.CPU()/GPU(), vision_backend=...)` — `vision_backend` **must** be set explicitly at construction time, or image messages fail with `"Vision executor should not be null"`.
+- `Engine.create_conversation(system_message=..., sampler_config=SamplerConfig(...), max_output_tokens=...)` returns a `Conversation`; JARVIS creates a **fresh conversation per request** (not a long-lived one) so the system prompt — which is rebuilt every turn with current time/intent/entities — always takes effect.
+- Context turns are replayed via `Message.user(Contents.of(text))` / `Message.model(Contents.of(text))` — the `Contents.of(...)` wrapping is required; passing a bare string to `Message.user()` raises an `AttributeError` inside the library.
+- Images go through `Content.ImageBytes(bytes)` — no temp file needed, unlike the old `Content.ImageFile(absolute_path=...)`-only assumption.
 
 #### Inference Parameters
 
 | Parameter | Value | Purpose |
 |---|---|---|
-| `n_ctx` | 4096 | Context window size (tokens) |
-| `temperature` | 0.7 | Sampling randomness |
-| `top_p` | 0.9 | Nucleus sampling threshold |
-| `repeat_penalty` | 1.1 | Repetition suppression |
-| `chat_format` | `chatml` | Template for text-only models |
+| `SamplerConfig(temperature=..., top_p=...)` | `0.7` / `0.9` | Sampling randomness / nucleus threshold, set per conversation |
+| `RepetitionPenaltyConfig(repetition_penalty=...)` | `1.1` | Repetition suppression, set per `send_message` call |
+| `max_output_tokens` | see adaptive budget above | Hard token cap, settable at conversation creation and per-message |
 
 ---
 
@@ -1584,7 +1627,7 @@ Manages persistent wake word settings stored at `%APPDATA%/JARVIS/wakeword.json`
 **Class:** `VisionModel`
 **Lines of Code:** 121
 
-Orchestrates multimodal vision tasks by combining screen/webcam/file capture with the Qwen2.5-VL language model.
+Orchestrates multimodal vision tasks by combining screen/webcam/file capture with the Gemma 4 E2B language model.
 
 #### Capabilities
 
@@ -1654,7 +1697,7 @@ Captures single frames from the default webcam using OpenCV.
 **Class:** `CNNImageClassifier`
 **Lines of Code:** 106
 
-A custom CNN-based image classification system serving as fallback when Qwen2.5-VL is unavailable.
+A custom CNN-based image classification system serving as fallback when Gemma 4 E2B vision is unavailable.
 
 #### Features
 
@@ -2599,22 +2642,18 @@ Automated model download and configuration utility.
 |---|---|---|---|
 | GloVe 6B 100d | Stanford NLP | ~130 MB | Word embeddings for NLP |
 | spaCy `en_core_web_sm` | spaCy Hub | ~12 MB | NER and tokenization |
-| Qwen2.5-VL GGUF | HuggingFace | ~2–4 GB | Vision-language model |
-| Qwen2.5 Instruct GGUF | HuggingFace | ~1–3 GB | Text-only model |
-| mmproj GGUF | HuggingFace | ~600 MB | Vision projector |
-| DistilBERT ONNX | Custom train | ~250 MB | Intent classifier |
+| Gemma 4 E2B `.litertlm` | HuggingFace (`litert-community`) | ~2.6 GB | Text + vision model (single file, no separate projector) |
+| DistilBERT ONNX | Custom train | ~320 MB (`model.onnx`) | Intent classifier (requires `requirements-train.txt` to build) |
+| LinearSVC + label encoder | Custom train | ~0.5 MB | Intent classifier baseline, built by `setup_models.py` |
 
 #### Usage
 
 ```bash
-# Download all models
+# Download all models and train the intent classifier
 python setup_models.py
 
-# Configure llama-cpp for GPU
-python setup_models.py --configure-llama-gpu
-
-# Verify model installation
-python setup_models.py --verify
+# Build/train the intent classifier only (no large downloads)
+python setup_models.py --only-intent-models
 ```
 
 ---
@@ -2708,13 +2747,11 @@ main.py → _run()
 | `JARVIS_ENABLE_ONNX_INTENT` | `1` | Enable ONNX Runtime for intent classification |
 | `JARVIS_DISABLE_ONNX_INTENT` | `0` | Force-disable ONNX intent runtime |
 | `JARVIS_ALLOW_ONLINE_MODEL_DOWNLOAD` | `0` | Allow HuggingFace model downloads |
-| `JARVIS_LLM_MODEL_PATH` | (auto) | Explicit LLM model file path |
-| `JARVIS_LLM_MMPROJ_PATH` | (auto) | Explicit mmproj file path |
+| `JARVIS_LLM_MODEL_PATH` | (auto) | Explicit `.litertlm` model file path |
 | `JARVIS_LLM_THREADS` | `4` | LLM inference thread count |
 | `JARVIS_LLM_MAX_TOKENS_CPU` | `160` | Max tokens for CPU-bound generation |
-| `JARVIS_LLM_CONTEXT_TURNS` | `2` | Conversation context turns sent to LLM |
+| `JARVIS_LLM_CONTEXT_TURNS` | `5` | Conversation context turns sent to LLM (matches `ContextManager`'s window) |
 | `JARVIS_LLM_SUBPROCESS` | `1` | Force subprocess worker mode |
-| `JARVIS_LLM_AUTO_MODEL_SWITCH` | `1` | Auto-switch between VL and text models |
 | `JARVIS_LLM_WORKER_READY_TIMEOUT_S` | `25` | Worker startup timeout |
 | `JARVIS_LLM_WORKER_RESPONSE_TIMEOUT_S` | `45` | Worker response timeout |
 | `JARVIS_LLM_VISION_TIMEOUT_S` | `240` | Vision inference timeout |
@@ -2746,7 +2783,7 @@ main.py → _run()
 |---|---|
 | Wake word detection | < 500 ms |
 | STT transcription (5s audio) | < 800 ms |
-| Intent classification | < 8 ms |
+| Intent classification | < 8 ms (aspirational: not met by DistilBERT ONNX, which measures ~16-25 ms on CPU; the LinearSVC path does meet it at ~0.4 ms) |
 | Entity extraction | < 5 ms |
 | App launch | < 300 ms |
 | System control | < 50 ms |
@@ -2754,6 +2791,11 @@ main.py → _run()
 | TTS synthesis start | < 200 ms |
 
 #### Observed Benchmarks
+
+Latency figures below are indicative measurements from the author's machine, not
+a reproducible benchmark harness. Intent-classifier **accuracy** numbers are
+produced by `python -m ml.evaluate` against the held-out split in
+`data/intents_test.csv`; see section 16a.
 
 | Metric | Target | Typical (CPU) | Typical (GPU) |
 |---|---|---|---|
@@ -2769,6 +2811,27 @@ main.py → _run()
 | App launch | < 300 ms | ~100 ms | — |
 | System control (volume/brightness) | < 50 ms | ~30 ms | — |
 
+#### 16a. Intent Classifier Accuracy Methodology
+
+Accuracy is measured on base sentences held out **before** augmentation, so no
+variant of a test sentence appears in training data. `ml/dataset.py` writes
+`data/intents_train.csv` (augmented) and `data/intents_test.csv` (raw holdout);
+`ml/split_utils.py` groups by `base_text`; `ml/evaluate.py` scores the holdout
+file directly.
+
+| Model | Accuracy | Macro-F1 | Median latency | Size |
+|---|---|---|---|---|
+| LinearSVC | 0.831 | 0.821 | 0.37 ms | 0.42 MB |
+| BiLSTM | not retrained | — | — | — |
+| DistilBERT | not retrained | — | — | — |
+
+Historical note: earlier revisions of this document and `ml/results/` reported
+1.0000 accuracy for all three models. That was invalid — the evaluation script
+re-split the augmented training file, so ~79% of "test" rows were training rows,
+and augmentation-before-split leaked near-duplicates across the remainder.
+Both causes are fixed; DistilBERT and BiLSTM must be retrained (needs
+`requirements-train.txt`) before their rows are meaningful.
+
 ---
 
 ## 17. Dependency Stack
@@ -2778,7 +2841,7 @@ main.py → _run()
 | Package | Version | Purpose |
 |---|---|---|
 | PyQt6 | ≥ 6.6 | GUI framework |
-| llama-cpp-python | ≥ 0.2.0 | GGUF model inference |
+| litert-lm-api | ≥ 0.15 | Gemma 4 E2B model inference (LiteRT-LM) |
 | faster-whisper | ≥ 1.0 | Speech-to-text |
 | edge-tts | ≥ 6.1 | Neural TTS |
 | spacy | ≥ 3.7 | NLP pipeline |
@@ -2890,7 +2953,7 @@ JarvisMainWindow._submit_text()
     │            │     ├── [Small-Talk] → predefined responses
     │            │     ├── [Deterministic] → Action module function
     │            │     ├── [Verified Web] → realtime_web.verified_answer()
-    │            │     └── [Generative] → QwenBridge.generate(text, context)
+    │            │     └── [Generative] → GemmaBridge.generate(text, context)
     │            ├── enforce_response_verbosity(response, mode)
     │            ├── ContextManager.add_turn("assistant", response)
     │            ├── _persist_turn_async(role="assistant", ...)
@@ -2902,7 +2965,7 @@ JarvisMainWindow._submit_text()
               └── Router.analyze_image_file(path, prompt)
                    ├── CNN classify (fallback)
                    ├── Image preprocessing (PIL → PNG bytes)
-                   └── QwenBridge.generate(prompt, [], image_bytes=...)
+                   └── GemmaBridge.generate(prompt, [], image_bytes=...)
 ```
 
 ### Memory Persistence Flow
@@ -2958,7 +3021,7 @@ JarvisPipeline._persist_turn_async()
 | **pycaw** | Python Core Audio Windows — library for Windows audio endpoint control |
 | **Nuitka** | Python-to-C compiler for creating standalone executables |
 | **openWakeWord** | Open-source wake word detection library using ONNX models |
-| **QwenBridge** | JARVIS's abstraction layer over the local Qwen LLM |
+| **GemmaBridge** | JARVIS's abstraction layer over the local Gemma 4 E2B LLM (via LiteRT-LM) |
 | **Router** | The decision engine that maps classified intents to action modules |
 | **Pipeline** | The central orchestrator (`JarvisPipeline`) that coordinates all subsystems |
 | **Deterministic Action** | A pre-programmed Python script executed for known intents (no LLM involved) |
@@ -2971,5 +3034,61 @@ JarvisPipeline._persist_turn_async()
 
 ---
 
-*This document was generated for the JARVIS project. All system capabilities described are fully implemented and production-ready.*
+## 22. Known Limitations & Deferred Technical Debt
+
+Recorded so the next engineer does not mistake these for oversights. The full
+audit that produced this list is in `RESOURCES/audit-report.md`.
+
+1. **Memory is write-only.** `SQLiteStore.save_turn` and `VectorStore.add_memory`
+   are called on every turn, but nothing reads either store back:
+   `get_history`, `search_similar`, the preference tables, and
+   `ContextManager.resolve_reference` have no callers. Per-turn embeddings are
+   computed and discarded. The vector store is disabled by default
+   (`JARVIS_ENABLE_VECTOR_STORE`). Wiring retrieval into routing is a feature
+   decision, not a bug fix. On Python >= 3.13 `sentence-transformers` is disabled
+   and embeddings silently become hash-seeded random vectors.
+2. **Three logging systems.** Structured trace JSONL (`trace_event`),
+   pipe-delimited `performance.log` (`log_performance`), and `print` teed by
+   `SessionTerminalLogger` coexist; stdlib `logging` is unused. Roughly 100 broad
+   `except Exception` blocks still swallow root causes. Consolidating both is a
+   mechanical pass of its own.
+3. **Airplane mode / battery saver report false success.** Neither OS exposes a
+   stable unprivileged toggle, so both handlers open a settings page while
+   returning `success=True` with `requires_manual_toggle`. The spoken text is
+   honest; the success flag is still misleading to programmatic callers.
+4. **Clipboard paste cannot paste.** The handler reads the clipboard and says so;
+   actually pasting needs keystroke injection (`xdotool` / `SendInput`).
+5. **BiLSTM has no inference runtime.** Selecting it falls back to LinearSVC, so
+   it is no longer offered in the Settings model selector. `bilstm.onnx` is only
+   consumed by `ml/evaluate.py`.
+6. **DistilBERT / BiLSTM are unbenchmarked.** The training scripts read the
+   corrected split, but retraining requires `requirements-train.txt` and a GPU.
+   Until then `ml/results/comparison_report.json` marks them `skipped`.
+7. **Router is a keyword ladder.** `_recover_intent_from_text` remains a long
+   ordered chain of substring/regex checks rather than a data-driven intent
+   table. The three worst collisions (`sleep`, `sound`/`audio`,
+   `document`/`pdf`) are fixed and pinned by tests in
+   `tests/test_router_intent_recovery.py`; the rest of the ladder is untouched.
+8. **QA suites are Windows-only.** `qa/full_system_tester.py` and
+   `qa/ui_torture_test.py` contain real assertions and real exit codes, but
+   exercise pycaw/brightness APIs directly and were not ported to Linux. The
+   `tests/` pytest suite is the cross-platform regression net.
+9. **Remaining duplication.** `_max_tokens_for_request` and the context-message
+   builder are still duplicated between `llm/gemma_bridge.py` and
+   `llm/gemma_worker.py` (the worker must stay import-light and
+   subprocess-safe, so full sharing isn't free); the wake-phrase helpers and
+   the verbosity normalizer each exist in two or three places. The default
+   system prompt (`llm/system_prompt.py`) and the small-talk word lists
+   (`nlp/intent_classifier.py`, imported by `nlp/router.py`) were consolidated
+   to single sources of truth. Platform-port duplication was consolidated
+   into `actions/common.py`.
+10. **Verified web answering is off by default.** `realtime_web` only runs when
+    enabled in Settings. Its provider fan-out is now parallel with an 8s
+    deadline, but the default was left unchanged.
+
+---
+
+*This document describes the JARVIS project as implemented. Capabilities with
+known gaps are listed in section 22; see `RESOURCES/audit-report.md` for the
+audit behind them.*
 ]]>

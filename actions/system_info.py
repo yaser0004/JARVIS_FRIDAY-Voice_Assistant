@@ -3,59 +3,26 @@ from __future__ import annotations
 import platform
 import re
 import socket
-import subprocess
 from typing import Any, Dict
 
 import psutil
 
-
-def _response(success: bool, text: str, data: Any = None) -> Dict[str, Any]:
-    return {"success": success, "response_text": text, "data": data}
-
-
-def _run_powershell(command: str, timeout: int = 8) -> str:
-    try:
-        result = subprocess.run(
-            ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", command],
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-            check=False,
-        )
-        out = (result.stdout or "").strip()
-        return out
-    except Exception:
-        return ""
+from actions.common import response as _response
+from platform_adapters import backend
 
 
 def current_wifi_name() -> str | None:
-    out = _run_powershell("netsh wlan show interfaces")
-    if not out:
+    try:
+        return backend.current_wifi_name()
+    except Exception:
         return None
-
-    for line in out.splitlines():
-        if "SSID" in line and "BSSID" not in line:
-            _, _, value = line.partition(":")
-            ssid = value.strip()
-            if ssid and ssid.lower() != "not connected":
-                return ssid
-    return None
 
 
 def current_bluetooth_name() -> str | None:
-    cmd = (
-        "Get-PnpDevice -Class Bluetooth | "
-        "Where-Object {$_.Status -eq 'OK'} | "
-        "Select-Object -ExpandProperty FriendlyName"
-    )
-    out = _run_powershell(cmd)
-    if not out:
+    try:
+        return backend.current_bluetooth_name()
+    except Exception:
         return None
-    names = [line.strip() for line in out.splitlines() if line.strip()]
-    if not names:
-        return None
-    # Keep the first user-facing bluetooth device/adapter name.
-    return names[0]
 
 
 def battery_status() -> Dict[str, Any]:
@@ -126,7 +93,10 @@ def looks_like_system_info_query(text: str) -> bool:
     if any(token in normalized for token in ["battery", "plugged", "charging", "battery percent", "battery status"]):
         return True
 
-    if any(token in normalized for token in ["specs", "specifications", "hardware", "ram", "processor", "cpu"]):
+    # Word-boundary matching: bare substring checks previously matched "ram"
+    # inside ordinary words like "programming"/"diagram"/"grammar", hijacking
+    # unrelated questions into a system-diagnostics dump.
+    if re.search(r"\b(?:specs|specifications|hardware|ram|processor|cpu)\b", normalized):
         return True
 
     asks_for_network_info = any(token in normalized for token in ["what", "which", "current", "connected", "name", "status"])

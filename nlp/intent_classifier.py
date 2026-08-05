@@ -12,6 +12,7 @@ from sklearn.preprocessing import LabelEncoder
 from core.compute_runtime import choose_device_for_query, normalize_compute_mode, windows_cuda_runtime_ready
 from core.config import (
     DISTILBERT_ONNX_DIR,
+    FALLBACK_INTENT_CONFIDENCE_THRESHOLD,
     INTENT_CONFIDENCE_THRESHOLD,
     LABEL_ENCODER_PATH,
     LINEARSVC_PATH,
@@ -64,6 +65,8 @@ SMALL_TALK_EXACT = {
     "good evening",
     "what's up",
     "whats up",
+    "thanks",
+    "thank you",
 }
 
 SMALL_TALK_PREFIXES = (
@@ -73,6 +76,21 @@ SMALL_TALK_PREFIXES = (
     "how are you",
     "how r you",
 )
+
+# Text allowed to trail a matched greeting prefix and still count as small
+# talk (e.g. "hi there", "hey!"). Anything else after the prefix means the
+# message has real content ("hey, how does compound interest work") and
+# must not be shortcut past intent classification / the LLM.
+_SMALL_TALK_TRIVIAL_TAIL = {"", "there", "jarvis", "friday"}
+
+
+def _matches_small_talk_prefix(normalized: str) -> bool:
+    for prefix in SMALL_TALK_PREFIXES:
+        if normalized.startswith(prefix):
+            remainder = normalized[len(prefix):].strip(" ,.!?")
+            if remainder in _SMALL_TALK_TRIVIAL_TAIL:
+                return True
+    return False
 
 
 class IntentClassifier:
@@ -325,12 +343,10 @@ class IntentClassifier:
         logits = np.full((len(texts), num_classes), -8.0, dtype=np.float32)
 
         if self._fallback_model is None:
-            try:
-                idx = int(np.where(self.label_encoder.classes_ == "general_qa")[0][0])
-            except Exception:
-                idx = 0
-            logits[:, idx] = 8.0
-            return logits
+            # No model at all: a flat distribution is the honest answer. The low
+            # confidence demotes the prediction to general_qa and lets the
+            # router's keyword recovery engage instead of trusting a fake 1.0.
+            return np.zeros((len(texts), num_classes), dtype=np.float32)
 
         try:
             if hasattr(self._fallback_model, "decision_function"):
@@ -404,10 +420,7 @@ class IntentClassifier:
         if normalized in SMALL_TALK_EXACT:
             return "general_qa"
 
-        if any(normalized.startswith(prefix) for prefix in SMALL_TALK_PREFIXES):
-            return "general_qa"
-
-        if len(normalized.split()) <= 2 and normalized in {"thanks", "thank you"}:
+        if _matches_small_talk_prefix(normalized):
             return "general_qa"
 
         return None
@@ -454,7 +467,12 @@ class IntentClassifier:
         confidence = float(probs[best_idx])
         predicted = str(self.label_encoder.inverse_transform([best_idx])[0])
 
-        if self._last_inference_used_onnx and confidence < INTENT_CONFIDENCE_THRESHOLD:
+        threshold = (
+            INTENT_CONFIDENCE_THRESHOLD
+            if self._last_inference_used_onnx
+            else FALLBACK_INTENT_CONFIDENCE_THRESHOLD
+        )
+        if confidence < threshold:
             predicted = "general_qa"
 
         labels = self.label_encoder.inverse_transform(np.arange(len(probs)))
@@ -474,61 +492,4 @@ class IntentClassifier:
             "runtime": self._runtime,
             "provider": self._active_provider,
         }
-
-    def predict_batch(self, texts: List[str]) -> List[Dict[str, object]]:
-        if not texts:
-            return []
-
-        start = time.perf_counter()
-        logits = self._run(texts)
-        probs_batch = self._softmax(logits)
-        labels = self.label_encoder.inverse_transform(np.arange(probs_batch.shape[1]))
-        overrides = [self._small_talk_override(text) for text in texts]
-
-        fallback_preds: List[int | None] = []
-        if not self._last_inference_used_onnx and self._fallback_model is not None:
-            try:
-                raw_preds = self._fallback_model.predict(texts)
-                fallback_preds = [self._resolve_class_index(p) for p in raw_preds]
-            except Exception:
-                fallback_preds = [None] * len(texts)
-        else:
-            fallback_preds = [None] * len(texts)
-
-        results: List[Dict[str, object]] = []
-        for i, probs in enumerate(probs_batch):
-            if i < len(overrides) and overrides[i] is not None:
-                results.append(self._build_override_result(str(overrides[i]), 0.0))
-                continue
-
-            best_idx = int(np.argmax(probs))
-            if i < len(fallback_preds) and fallback_preds[i] is not None:
-                best_idx = int(fallback_preds[i])
-            confidence = float(probs[best_idx])
-            predicted = str(self.label_encoder.inverse_transform([best_idx])[0])
-            if self._last_inference_used_onnx and confidence < INTENT_CONFIDENCE_THRESHOLD:
-                predicted = "general_qa"
-            results.append(
-                {
-                    "intent": predicted,
-                    "confidence": confidence,
-                    "all_scores": {
-                        str(label): float(score) for label, score in zip(labels, probs)
-                    },
-                    "latency_ms": 0.0,
-                    "runtime": self._runtime,
-                    "provider": self._active_provider,
-                }
-            )
-
-        elapsed_ms = (time.perf_counter() - start) * 1000.0
-        per_item = elapsed_ms / max(len(results), 1)
-        for item in results:
-            item["latency_ms"] = per_item
-        log_performance(
-            "intent_classification_batch",
-            elapsed_ms,
-            f"batch={len(texts)};runtime={self._runtime};provider={self._active_provider}",
-        )
-        return results
 

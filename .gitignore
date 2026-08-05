@@ -16,6 +16,8 @@ build/
 
 # Virtual environments
 .venv/
+.venv_run/
+.venv312/
 venv/
 env/
 ENV/
@@ -65,12 +67,23 @@ models/**/*.bin
 models/**/*.safetensors
 models/**/*.onnx
 models/**/*.pkl
+models/**/*.litertlm
+models/**/*.xnnpack_cache
+models/**/*mldrift*cache*.bin
 ml/models/cnn_vision/
 ml/models/bilstm_saved/
 ml/models/distilbert_intent/
 ml/models/distilbert_onnx/
 ml/models/**/*.onnx
 ml/models/**/*.pkl
+ml/models/**/*.keras
+ml/models/**/*.h5
+
+# Generated dataset splits (rebuild with `python -m ml.dataset`)
+data/intents_train.csv
+data/intents_test.csv
+data/intents_raw.csv
+data/intents_augmented.csv
 
 # Embedded repositories / submodules
 openclaw/

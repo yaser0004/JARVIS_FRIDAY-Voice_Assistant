@@ -3,7 +3,6 @@
 import ctypes
 import os
 import re
-import subprocess
 import sys
 from pathlib import Path
 from typing import Any, Dict, List
@@ -105,42 +104,24 @@ def ensure_windows_cuda_dll_paths() -> list[str]:
     return added
 
 
-def _probe_llama_gpu_offload_subprocess() -> tuple[bool, str]:
-    ensure_windows_cuda_dll_paths()
-    probe_script = "\n".join(
-        [
-            "from core.compute_runtime import ensure_windows_cuda_dll_paths",
-            "ensure_windows_cuda_dll_paths()",
-            "import llama_cpp",
-            "fn = getattr(llama_cpp, 'llama_supports_gpu_offload', None)",
-            "print('1' if callable(fn) and bool(fn()) else '0')",
-        ]
-    )
+def _probe_litert_gpu_backend() -> tuple[bool, str]:
+    """Cheap, model-free check for LiteRT-LM's GPU backend prerequisite.
 
+    LiteRT-LM's GPU backend runs on Vulkan (Windows/Linux) or Metal (macOS).
+    This only checks that the runtime is present, not that the model will
+    actually offload successfully — the LLM bridge still falls back to CPU
+    on a failed GPU attempt.
+    """
     try:
-        completed = subprocess.run(
-            [sys.executable, "-c", probe_script],
-            check=False,
-            timeout=45,
-            capture_output=True,
-            text=True,
-            env=os.environ.copy(),
-        )
-    except Exception as exc:
-        return False, f"llama probe failed: {exc}"
-
-    stdout = str(completed.stdout or "").strip()
-    stderr = str(completed.stderr or "").strip()
-    if completed.returncode != 0:
-        return False, f"llama probe failed: {stderr or stdout or f'exit {completed.returncode}'}"
-
-    lines = [line.strip() for line in stdout.splitlines() if line.strip()]
-    result = lines[-1] if lines else ""
-    if result == "1":
+        if sys.platform == "darwin":
+            return True, ""
+        if os.name == "nt":
+            ctypes.WinDLL("vulkan-1.dll")
+            return True, ""
+        ctypes.CDLL("libvulkan.so.1")
         return True, ""
-    if result == "0":
-        return False, "llama_supports_gpu_offload() returned False."
-    return False, f"llama probe failed: unexpected output '{result or stdout}'"
+    except Exception as exc:
+        return False, f"Vulkan runtime not found: {exc}"
 
 
 def normalize_compute_mode(mode: str | None) -> str:
@@ -229,7 +210,7 @@ def detect_compute_capabilities() -> Dict[str, Any]:
     gpu_name = torch_device_name or gputil_device_name
     gpu_supported = bool(torch_cuda or "CUDAExecutionProvider" in onnx_providers or gpu_count > 0)
 
-    llama_gpu_offload_supported, llama_gpu_reason = _probe_llama_gpu_offload_subprocess()
+    llm_gpu_offload_supported, llm_gpu_reason = _probe_litert_gpu_backend()
 
     stt_cuda_ready = False
     stt_cuda_reason = ""
@@ -256,8 +237,8 @@ def detect_compute_capabilities() -> Dict[str, Any]:
         "onnx_cuda_available": "CUDAExecutionProvider" in onnx_providers,
         "torch_cuda_available": torch_cuda,
         "gpu_count": gpu_count,
-        "llm_gpu_offload_supported": llama_gpu_offload_supported,
-        "llm_gpu_reason": llama_gpu_reason,
+        "llm_gpu_offload_supported": llm_gpu_offload_supported,
+        "llm_gpu_reason": llm_gpu_reason,
         "stt_cuda_ready": stt_cuda_ready,
         "stt_cuda_reason": stt_cuda_reason,
     }

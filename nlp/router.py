@@ -21,7 +21,8 @@ from actions import (
 )
 from core.config import log_performance
 from core.session_logging import trace_event, trace_exception
-from llm.qwen_bridge import QwenBridge
+from llm.gemma_bridge import GemmaBridge
+from nlp.intent_classifier import SMALL_TALK_EXACT, _matches_small_talk_prefix
 from vision.cnn_classifier import CNNImageClassifier
 from vision.screen_capture import ScreenCapture
 from vision.webcam import WebcamCapture
@@ -30,7 +31,7 @@ from vision.webcam import WebcamCapture
 class Router:
     def __init__(
         self,
-        llm: QwenBridge | None = None,
+        llm: GemmaBridge | None = None,
         cancel_callback=None,
     ) -> None:
         self.llm = llm
@@ -75,7 +76,7 @@ class Router:
         self._last_llm_init_attempt = now
         self._trace("ensure_llm_init_attempt")
         try:
-            self.llm = QwenBridge()
+            self.llm = GemmaBridge()
             ready = False
             available = False
             try:
@@ -106,28 +107,10 @@ class Router:
         if not normalized:
             return False
 
-        exact = {
-            "hi",
-            "hello",
-            "hey",
-            "hey there",
-            "yo",
-            "how are you",
-            "how are you doing",
-            "how r you",
-            "good morning",
-            "good afternoon",
-            "good evening",
-            "what's up",
-            "whats up",
-            "thanks",
-            "thank you",
-        }
-        if normalized in exact:
+        if normalized in SMALL_TALK_EXACT:
             return True
 
-        prefixes = ("hi ", "hello ", "hey ", "how are you", "how r you")
-        return any(normalized.startswith(prefix) for prefix in prefixes)
+        return _matches_small_talk_prefix(normalized)
 
     def _should_use_verified_web(self, raw_text: str, intent: str) -> bool:
         if not self.realtime_web_enabled:
@@ -229,11 +212,11 @@ class Router:
     ) -> str:
         verbosity = self._response_verbosity
         if verbosity == "brief":
-            verbosity_rule = "Keep replies to 1-2 short sentences unless the user asks for details."
+            verbosity_rule = "Keep it to 1-2 short sentences unless the user asks for more."
         elif verbosity == "detailed":
-            verbosity_rule = "Give fuller answers with practical detail while staying clear and grounded."
+            verbosity_rule = "Give a fuller, practically useful answer while staying clear."
         else:
-            verbosity_rule = "Keep replies concise by default (about 2-3 sentences)."
+            verbosity_rule = "Keep it conversational and tight, roughly 2-3 sentences."
 
         entity_pairs = []
         for key, value in sorted((entities or {}).items()):
@@ -243,33 +226,37 @@ class Router:
         entity_summary = ", ".join(entity_pairs) if entity_pairs else "none"
 
         lines = [
-            "You are JARVIS (Just A Really Very Intelligent System), a local desktop assistant running on the user's Windows PC.",
-            "Hybrid runtime policy:",
-            "- System operations are executed by deterministic handlers outside the LLM.",
-            "- Never claim you changed system state unless an executed result is provided in context.",
-            "- If a user asks for an operation that was not executed, ask for a direct command or clarify limitations.",
-            "- For informational and conversational questions, provide the best direct answer.",
-            "- Do not prepend time/date unless the user asked for it.",
-            verbosity_rule,
-            f"Current runtime time: {datetime.now().astimezone().strftime('%A, %B %d, %Y %I:%M %p %Z')}.",
-            f"Realtime web mode: {'enabled' if self.realtime_web_enabled else 'disabled'}.",
-            f"Current intent hint: {intent}.",
-            f"Extracted entities: {entity_summary}.",
+            "You are JARVIS, the user's local desktop assistant, running entirely on their own machine.",
+            "Talk like a sharp, easygoing assistant, not a manual. Skip filler like \"As an AI\" and never "
+            "describe yourself as a generic AI or language model.",
+            "System actions (opening apps, adjusting volume, controlling media, and so on) are carried out by "
+            "separate deterministic code, not by you. Only describe a change as done if this prompt already "
+            "tells you it happened. If someone asks for something that wasn't executed, say so plainly and "
+            "suggest the direct command instead of pretending it worked.",
+            "For questions and everyday conversation, just answer directly and naturally.",
+            f"{verbosity_rule} Don't lead with the date or time unless it's actually relevant to the answer.",
+            "",
+            f"Right now: {datetime.now().astimezone().strftime('%A, %B %d, %Y %I:%M %p %Z')}.",
+            f"Realtime web lookups: {'on' if self.realtime_web_enabled else 'off'}.",
+            f"Detected intent: {intent}.",
+            f"Extracted details: {entity_summary}.",
             f"Compute hint: {str(compute_hint or 'auto').lower()}.",
-            f"Latest user input: {self._clip_for_prompt(raw_text, max_chars=180)}",
+            f"What the user just said: {self._clip_for_prompt(raw_text, max_chars=180)}",
         ]
 
         if self._last_route_result:
             last = self._last_route_result
-            lines.append("Most recent executed route result (for continuity):")
-            lines.append(f"- route: {last.get('route_path', 'unknown')}")
-            lines.append(f"- success: {bool(last.get('success', False))}")
-            lines.append(f"- at: {last.get('at', 'unknown')}")
-            lines.append(f"- spoken result: {last.get('response_text', '')}")
+            lines.append("")
+            lines.append("For context, here's the last thing JARVIS actually executed:")
+            lines.append(
+                f"- action: {last.get('route_path', 'unknown')} "
+                f"(succeeded: {bool(last.get('success', False))}, at {last.get('at', 'unknown')})"
+            )
+            lines.append(f"- what was said about it: {last.get('response_text', '')}")
             compact_data = last.get("data", {})
             if isinstance(compact_data, dict) and compact_data:
                 data_items = ", ".join(f"{k}={v}" for k, v in sorted(compact_data.items()))
-                lines.append(f"- result data: {data_items}")
+                lines.append(f"- details: {data_items}")
 
         return "\n".join(lines)
 
@@ -394,7 +381,7 @@ class Router:
 
             with Image.open(file_path) as img:
                 rgb = img.convert("RGB")
-                # Smaller payloads significantly improve Qwen-VL stability on 4-6GB GPUs.
+                # Smaller payloads significantly improve vision stability on 4-6GB GPUs.
                 try:
                     max_edge = int(os.getenv("JARVIS_VISION_MAX_EDGE", "512"))
                 except Exception:
@@ -589,20 +576,6 @@ class Router:
         return "\n\n".join(parts).strip()
 
     @staticmethod
-    def _vision_backend_preference() -> str:
-        value = str(os.getenv("JARVIS_VISION_BACKEND", "ollama")).strip().lower()
-        aliases = {
-            "llama": "qwen",
-            "llama-cpp": "qwen",
-            "local": "qwen",
-            "worker": "qwen",
-        }
-        normalized = aliases.get(value, value)
-        if normalized not in {"ollama", "qwen", "auto"}:
-            return "ollama"
-        return normalized
-
-    @staticmethod
     def _build_vision_prompt(user_prompt: str) -> str:
         prompt_text = (user_prompt or "Describe this image in detail.").strip()
         if not prompt_text:
@@ -617,64 +590,6 @@ class Router:
             "Never repeat section labels inside section text."
         )
         return f"{prefix}\nUser request: {prompt_text}"
-
-    def _run_ollama_vision(self, vision_prompt: str, image_bytes: bytes) -> tuple[str, str, Dict[str, Any]]:
-        status: Dict[str, Any] = {}
-        try:
-            from llm.ollama_vision_bridge import OllamaVisionBridge
-
-            bridge = OllamaVisionBridge()
-            status = bridge.get_status()
-            if not status.get("server_reachable"):
-                return (
-                    "",
-                    (
-                        "Ollama vision backend is unreachable. "
-                        "Start Ollama with `ollama serve` and verify JARVIS_OLLAMA_URL."
-                    ),
-                    status,
-                )
-
-            if not status.get("model_available"):
-                model_name = str(status.get("model") or "qwen2.5vl:3b")
-                return (
-                    "",
-                    (
-                        f"Ollama vision model '{model_name}' is not installed. "
-                        f"Run `ollama pull {model_name}`."
-                    ),
-                    status,
-                )
-
-            response_text = bridge.analyze_image(vision_prompt, image_bytes)
-            if getattr(bridge, "last_used_model", ""):
-                status["resolved_model"] = str(getattr(bridge, "last_used_model") or "")
-            return str(response_text or "").strip(), "", status
-        except Exception as exc:
-            trace_exception("backend.router", exc, event="ollama_vision_failed")
-            return "", f"Ollama vision request failed: {exc}", status
-
-    def get_vision_runtime_status(self) -> Dict[str, Any]:
-        status: Dict[str, Any] = {
-            "preferred_backend": self._vision_backend_preference(),
-            "ollama": {
-                "available": False,
-                "message": "Ollama status has not been checked yet.",
-            },
-        }
-        if status["preferred_backend"] not in {"ollama", "auto"}:
-            return status
-
-        try:
-            from llm.ollama_vision_bridge import OllamaVisionBridge
-
-            status["ollama"] = OllamaVisionBridge().get_status()
-        except Exception as exc:
-            status["ollama"] = {
-                "available": False,
-                "message": f"Ollama vision status probe failed: {exc}",
-            }
-        return status
 
     @staticmethod
     def _format_cnn_hints(cnn_result: Dict[str, Any] | None) -> str:
@@ -735,35 +650,13 @@ class Router:
         cnn_fallback_response = self._build_cnn_fallback_response(cnn_result)
 
         image_bytes, image_error = self._prepare_image_payload(file_path)
-        llm_result_text = ""
-        vision_errors: List[str] = []
-        backend_preference = self._vision_backend_preference()
         prompt_text = (prompt or "Describe this image in detail.").strip()
         if not prompt_text:
             prompt_text = "Describe this image in detail."
         vision_prompt = self._build_vision_prompt(prompt_text)
 
-        if image_bytes is not None and backend_preference in {"ollama", "auto"}:
-            ollama_text, ollama_error, ollama_status = self._run_ollama_vision(vision_prompt, image_bytes)
-            if ollama_text:
-                cleaned_response = self._sanitize_vision_response(prompt_text, str(ollama_text))
-                return {
-                    "success": True,
-                    "response_text": cleaned_response,
-                    "data": {
-                        "mode": "ollama_vision",
-                        "vision_backend": "ollama",
-                        "vision_model": str(
-                            ollama_status.get("resolved_model") or ollama_status.get("model") or ""
-                        ),
-                        "image_path": str(path),
-                        "cnn": cnn_result.get("data") if cnn_result else None,
-                    },
-                }
-            if ollama_error:
-                vision_errors.append(str(ollama_error))
-
-        if image_bytes is not None and backend_preference in {"qwen", "auto"}:
+        vision_error = ""
+        if image_bytes is not None:
             llm_available = self._ensure_llm() and self.llm is not None
             if llm_available:
                 llm_result_text = self.llm.generate(
@@ -777,14 +670,12 @@ class Router:
                 llm_answer_usable = bool(llm_result_text) and not llm_text_lower.startswith("local llm")
                 if "vision is unavailable in the current runtime" in llm_text_lower:
                     llm_answer_usable = False
-                    vision_errors.append(
-                        "I could not run multimodal image analysis because Qwen2.5-VL vision runtime is unavailable. "
-                        "Run `python setup_models.py` to install the VL GGUF + mmproj files."
+                    vision_error = (
+                        "I could not run multimodal image analysis because the vision runtime is unavailable. "
+                        "Run `python setup_models.py` to install the Gemma 4 E2B model."
                     )
                 elif not llm_answer_usable:
-                    vision_errors.append(
-                        str(llm_result_text).strip() or "Multimodal image analysis is temporarily unavailable."
-                    )
+                    vision_error = str(llm_result_text).strip() or "Multimodal image analysis is temporarily unavailable."
 
                 if llm_answer_usable:
                     cleaned_response = self._sanitize_vision_response(prompt_text, str(llm_result_text))
@@ -792,19 +683,17 @@ class Router:
                         "success": True,
                         "response_text": cleaned_response,
                         "data": {
-                            "mode": "qwen2.5-vl",
-                            "vision_backend": "qwen",
+                            "mode": "gemma_vision",
+                            "vision_backend": "gemma",
                             "image_path": str(path),
                             "cnn": cnn_result.get("data") if cnn_result else None,
                         },
                     }
             else:
-                vision_errors.append("Local Qwen vision runtime is unavailable.")
+                vision_error = "Local Gemma vision runtime is unavailable."
 
-        llm_error_text = "\n".join(item for item in vision_errors if item).strip()
-
-        if llm_error_text:
-            response = llm_error_text
+        if vision_error:
+            response = vision_error
             if cnn_fallback_response:
                 response = f"{response}\n{cnn_fallback_response}"
                 if image_error:
@@ -827,7 +716,7 @@ class Router:
                 "response_text": response,
                 "data": {
                     "mode": "vision_unavailable",
-                    "vision_backend": backend_preference,
+                    "vision_backend": "gemma",
                     "image_path": str(path),
                     "cnn": cnn_result.get("data") if cnn_result and cnn_result.get("success") else None,
                 },
@@ -840,47 +729,13 @@ class Router:
                 "data": {"image_path": str(path)},
             }
 
-        if llm_result_text:
-            response = str(llm_result_text).strip()
-            if cnn_hints:
-                response = f"{response}\nOptional CNN hint (low confidence): {cnn_hints}"
-            return {
-                "success": False,
-                "response_text": response,
-                "data": {
-                    "image_path": str(path),
-                    "mode": "qwen2.5-vl",
-                    "cnn": cnn_result.get("data") if cnn_result and cnn_result.get("success") else None,
-                },
-            }
-
         if cnn_fallback_response:
-            response = cnn_fallback_response
-            if image_error:
-                response = f"{response}\nImage preprocessing warning: {image_error}"
             return {
                 "success": True,
-                "response_text": response,
+                "response_text": cnn_fallback_response,
                 "data": {
                     "mode": "cnn_fallback",
                     "image_path": str(path),
-                    "cnn": cnn_result.get("data") if cnn_result and cnn_result.get("success") else None,
-                },
-            }
-
-        if cnn_hints:
-            return {
-                "success": False,
-                "response_text": (
-                    "Multimodal image analysis is unavailable right now. "
-                    "If using Ollama vision, ensure `ollama serve` is running and the model is pulled. "
-                    "If using local Qwen vision, run `python setup_models.py`.\n"
-                    f"Optional CNN hint (low confidence): {cnn_hints}"
-                ),
-                "data": {
-                    "image_path": str(path),
-                    "mode": "vision_unavailable",
-                    "vision_backend": backend_preference,
                     "cnn": cnn_result.get("data") if cnn_result and cnn_result.get("success") else None,
                 },
             }
@@ -1093,6 +948,15 @@ class Router:
         if self._is_visual_request(raw_text, entities):
             return "vision_query"
 
+        # Trust a genuinely confident general_qa: the classifier demotes weak
+        # predictions to general_qa below ~0.55, so >= 0.60 means the model
+        # really did choose general_qa — skip the keyword ladder, which would
+        # otherwise misfire on questions like "how does sound travel".
+        if intent == "general_qa" and confidence >= 0.60 and not (
+            weather_signal or explicit_search_signal or switch_request or entities.get("power_command")
+        ):
+            return "general_qa"
+
         if entities.get("clipboard_action") or "clipboard" in normalized:
             return "clipboard_action"
 
@@ -1108,7 +972,10 @@ class Router:
             "shutdown",
             "restart",
             "hibernate",
-            "sleep",
+            # bare "sleep" collides with questions about sleeping
+            "go to sleep",
+            "sleep mode",
+            "to sleep",
             "lock",
             "monitor off",
             "turn off monitor",
@@ -1160,12 +1027,16 @@ class Router:
             "unmute",
             "speaker",
             "speakers",
-            "sound",
-            "audio",
             "louder",
             "quieter",
         )
-        if self._contains_any(normalized, volume_terms):
+        # Bare "sound"/"audio" only mean volume when paired with an adjustment word,
+        # so "how does sound travel" stays a question.
+        volume_adjust_terms = ("turn up", "turn down", "increase", "decrease", "raise", "lower", "set", "%", "up", "down", "max", "min", "off", "on")
+        if self._contains_any(normalized, volume_terms) or (
+            self._contains_any(normalized, ("sound", "audio"))
+            and self._contains_any(normalized, volume_adjust_terms)
+        ):
             return "system_volume"
 
         brightness_terms = (
@@ -1195,8 +1066,15 @@ class Router:
         ):
             return "open_website"
 
-        file_terms = (" file", "folder", "document", "pdf", "txt", "open file", "find file", "search file")
-        if self._contains_any(normalized, file_terms):
+        file_terms = (" file", "folder", "open file", "find file", "search file")
+        # Bare "document"/"pdf"/"txt" need a file action word, so informational
+        # questions about documents don't become file operations.
+        file_object_terms = ("document", "pdf", "txt")
+        file_action_terms = ("open ", "find ", "read ", "show ", "search ", "locate ")
+        if self._contains_any(normalized, file_terms) or (
+            self._contains_any(normalized, file_object_terms)
+            and self._contains_any(normalized, file_action_terms)
+        ):
             return "file_control"
 
         if explicit_search_signal:
@@ -1341,10 +1219,6 @@ class Router:
                     weather_entities["raw_text"] = raw_text
                     return done("weather_query", weather_control.handle(weather_entities))
 
-            if intent == "weather_query":
-                weather_entities = dict(entities)
-                weather_entities["raw_text"] = raw_text
-                return done("weather_query", weather_control.handle(weather_entities))
             if intent == "web_search":
                 if self._is_small_talk(raw_text):
                     intent = "general_qa"

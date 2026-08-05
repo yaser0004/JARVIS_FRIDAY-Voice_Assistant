@@ -3,10 +3,13 @@
 import os
 from dataclasses import dataclass
 from pathlib import Path
+from threading import Lock
 
 
 APP_NAME = "JARVIS"
-APPDATA_DIR = Path(os.getenv("APPDATA", str(Path.home()))) / APP_NAME
+# Windows: %APPDATA%\JARVIS (unchanged). Linux/macOS: XDG data home.
+_appdata_base = os.getenv("APPDATA") or os.getenv("XDG_DATA_HOME") or str(Path.home() / ".local" / "share")
+APPDATA_DIR = Path(_appdata_base) / APP_NAME
 APPDATA_DIR.mkdir(parents=True, exist_ok=True)
 
 LOG_FILE = APPDATA_DIR / "performance.log"
@@ -27,10 +30,7 @@ TOKENIZER_PATH = ML_MODELS_DIR / "tokenizer.pkl"
 LABEL_ENCODER_PATH = ML_MODELS_DIR / "label_encoder.pkl"
 
 GLOVE_PATH = DATA_DIR / "glove" / "glove.6B.100d.txt"
-QWEN_VL_GGUF_PATH = MODELS_DIR / "Qwen2.5-VL-3B-Instruct-Q8_0.gguf"
-QWEN_VL_MMPROJ_PATH = MODELS_DIR / "mmproj-Qwen2.5-VL-3B-Instruct-Q8_0.gguf"
-QWEN_TEXT_FALLBACK_GGUF_PATH = MODELS_DIR / "qwen2.5-3b-instruct-q4_k_m.gguf"
-QWEN_GGUF_PATH = QWEN_VL_GGUF_PATH
+GEMMA_LITERTLM_PATH = MODELS_DIR / "gemma-4-E2B-it.litertlm"
 
 CNN_VISION_DIR = ML_MODELS_DIR / "cnn_vision"
 CNN_VISION_WEIGHTS_PATH = CNN_VISION_DIR / "cnn_scratch.pt"
@@ -41,6 +41,9 @@ ERROR_SOUND_PATH = ASSETS_DIR / "sounds" / "error.wav"
 APP_ICON_PATH = ASSETS_DIR / "icon.ico"
 
 INTENT_CONFIDENCE_THRESHOLD = 0.55
+# LinearSVC decision margins softmax to flatter distributions than DistilBERT
+# logits, so the fallback path gets its own, lower demotion threshold.
+FALLBACK_INTENT_CONFIDENCE_THRESHOLD = 0.15
 CONTEXT_WINDOW_SIZE = 5
 
 
@@ -63,11 +66,32 @@ def ensure_runtime_dirs() -> None:
     CNN_VISION_DIR.mkdir(parents=True, exist_ok=True)
 
 
+_perf_log_handle = None
+_perf_log_lock = Lock()
+
+
+def _perf_log() -> object | None:
+    """Keep one append handle open; this is a hot path (every metric)."""
+    global _perf_log_handle
+    if _perf_log_handle is None or _perf_log_handle.closed:
+        try:
+            APPDATA_DIR.mkdir(parents=True, exist_ok=True)
+            _perf_log_handle = LOG_FILE.open("a", encoding="utf-8")
+        except OSError:
+            return None
+    return _perf_log_handle
+
+
 def log_performance(operation: str, latency_ms: float, details: str = "") -> None:
-    ensure_runtime_dirs()
     line = f"{operation}|{latency_ms:.3f}|{details}\n"
-    with LOG_FILE.open("a", encoding="utf-8") as f:
-        f.write(line)
+    with _perf_log_lock:
+        handle = _perf_log()
+        if handle is not None:
+            try:
+                handle.write(line)
+                handle.flush()
+            except OSError:
+                pass
 
     # Mirror perf metrics into session telemetry when a session trace logger is active.
     try:

@@ -937,9 +937,9 @@ class FullSystemTester:
         # Strict mode still requires real execution, but accepts graceful CNN fallback
         # when multimodal runtime is unavailable or unstable.
         if self.strict_real:
-            ok = success and mode in {"qwen2.5-vl", "cnn_fallback"}
+            ok = success and mode in {"gemma_vision", "cnn_fallback"}
         else:
-            ok = success and mode in {"qwen2.5-vl", "cnn_fallback"}
+            ok = success and mode in {"gemma_vision", "cnn_fallback"}
 
         return CaseOutcome(
             ok=ok,
