@@ -113,6 +113,11 @@ class Router:
         return _matches_small_talk_prefix(normalized)
 
     def _should_use_verified_web(self, raw_text: str, intent: str) -> bool:
+        # No content-based classification: when Verified Web Mode is on, every
+        # non-small-talk conversational turn goes to the web, full stop. Prior
+        # rounds tried to keyword-classify "does this need the web" and kept
+        # missing real phrasings; the user explicitly asked to drop that and
+        # force every query through instead.
         if not self.realtime_web_enabled:
             return False
 
@@ -120,32 +125,28 @@ class Router:
         if not normalized or self._is_small_talk(normalized):
             return False
 
-        explicit_markers = (
-            "search web",
-            "web search",
-            "look up",
-            "lookup",
-            "from the web",
-            "on the web",
-            "latest",
-            "news",
-            "today",
-            "current",
-            "update",
-            "recent",
-            "price",
-            "weather",
-            "score",
-            "stock",
-        )
-        if not any(marker in normalized for marker in explicit_markers):
-            return False
+        return intent in {"web_search", "general_qa"}
 
-        # Use the realtime-web extractor only for explicit web/fresh-information asks.
-        if intent not in {"web_search", "general_qa"}:
-            return False
+    @staticmethod
+    def _resolve_web_query(raw_text: str, context: List[Dict[str, str]]) -> str:
+        """Splice in the most recent user topic for short/pronoun-heavy follow-ups.
 
-        return realtime_web.looks_like_research_query(raw_text)
+        "look it up" or "when was it released" carry no searchable topic of
+        their own - the actual subject lives in the preceding turns. Only the
+        string handed to verified_answer is affected; raw_text itself stays
+        untouched for classification, chat display, and persistence.
+        """
+        if realtime_web.has_topic_content(raw_text):
+            return raw_text
+
+        for turn in reversed(context or []):
+            if str(turn.get("role")) != "user":
+                continue
+            candidate = str(turn.get("text") or "").strip()
+            if candidate and candidate != raw_text and realtime_web.has_topic_content(candidate):
+                return f"{candidate} {raw_text}".strip()
+
+        return raw_text
 
     @staticmethod
     def _normalize_verbosity_mode(verbosity: str | None) -> str:
@@ -209,6 +210,7 @@ class Router:
         intent: str,
         entities: Dict[str, Any],
         compute_hint: str | None,
+        web_attempted_and_failed: bool = False,
     ) -> str:
         verbosity = self._response_verbosity
         if verbosity == "brief":
@@ -225,6 +227,33 @@ class Router:
             entity_pairs.append(f"{key}={self._clip_for_prompt(value, max_chars=60)}")
         entity_summary = ", ".join(entity_pairs) if entity_pairs else "none"
 
+        if web_attempted_and_failed:
+            web_status_line = (
+                "A live web lookup was attempted for this message but did not return usable results - "
+                "you are answering from your own training knowledge only for this turn. Never claim you "
+                "are fetching, pulling up, checking, or searching the web/internet right now, since you "
+                "already tried and it did not pan out."
+            )
+            cutoff_suggestion = "mention that a live check just failed to turn up anything useful, and suggest the user try rephrasing or asking again"
+        else:
+            web_status_line = (
+                "No live web lookup was performed for this message - you are answering from your own "
+                "training knowledge only. Never claim you are fetching, pulling up, checking, or "
+                "searching the web/internet right now, since you are not."
+            )
+            cutoff_suggestion = "tell the user to ask again with Verified Web Mode / web search enabled so you can check current information"
+
+        cutoff_line = (
+            "You have a training data knowledge cutoff date that you know approximately, even if you're "
+            "not told it explicitly here. Compare it against the current date given below. If this "
+            "specific question depends on facts, events, releases, prices, versions, rankings, or status "
+            "that could plausibly have changed between your knowledge cutoff and now, do not state an "
+            f"answer as if it were current - say plainly that your training data may be out of date on "
+            f"this point, and {cutoff_suggestion}. Only hedge like this for genuinely time-sensitive "
+            "topics - don't add disclaimers to stable facts (math, definitions, how things work, "
+            "historical events) that don't change over time."
+        )
+
         lines = [
             "You are JARVIS, the user's local desktop assistant, running entirely on their own machine.",
             "Talk like a sharp, easygoing assistant, not a manual. Skip filler like \"As an AI\" and never "
@@ -237,7 +266,8 @@ class Router:
             f"{verbosity_rule} Don't lead with the date or time unless it's actually relevant to the answer.",
             "",
             f"Right now: {datetime.now().astimezone().strftime('%A, %B %d, %Y %I:%M %p %Z')}.",
-            f"Realtime web lookups: {'on' if self.realtime_web_enabled else 'off'}.",
+            web_status_line,
+            cutoff_line,
             f"Detected intent: {intent}.",
             f"Extracted details: {entity_summary}.",
             f"Compute hint: {str(compute_hint or 'auto').lower()}.",
@@ -561,19 +591,23 @@ class Router:
             compact = re.sub(r"\s+", " ", text).strip()
             return compact
 
-        parts: List[str] = []
-        if overview_lines:
-            parts.append(f"Overview: {' '.join(overview_lines[:2])}")
-        if detail_lines:
-            parts.append(f"Details: {' '.join(detail_lines[:4])}")
+        # No section labels ("Overview:"/"Details:"/"Uncertainty:") - overview and
+        # detail lines were only ever split apart by an artificial label, not by
+        # meaning, so they read naturally as one paragraph. Uncertainty stays a
+        # separate trailing paragraph (unlabeled) so it still reads as a distinct
+        # caveat, without a header cluttering both the chat and the spoken text.
+        paragraphs: List[str] = []
+        main_lines = overview_lines[:2] + detail_lines[:4]
+        if main_lines:
+            paragraphs.append(" ".join(main_lines))
         if uncertainty_lines:
-            parts.append(f"Uncertainty: {' '.join(uncertainty_lines[:2])}")
+            paragraphs.append(" ".join(uncertainty_lines[:2]))
 
-        if not parts:
+        if not paragraphs:
             compact = re.sub(r"\s+", " ", text).strip()
             return compact
 
-        return "\n\n".join(parts).strip()
+        return "\n\n".join(paragraphs).strip()
 
     @staticmethod
     def _build_vision_prompt(user_prompt: str) -> str:
@@ -593,18 +627,28 @@ class Router:
 
     @staticmethod
     def _format_cnn_hints(cnn_result: Dict[str, Any] | None) -> str:
+        """Plain hedged phrasing, no raw confidence numbers or meta-labels.
+
+        Confidence values stay available in data.cnn for anything that wants
+        them - they just don't clutter the sentence a person reads or hears.
+        """
         if not cnn_result or not cnn_result.get("success"):
             return ""
 
         preds = cnn_result.get("data", {}).get("predictions", [])
-        if not preds:
+        labels = [str(item.get("label") or "").strip() for item in preds[:3]]
+        labels = [label for label in labels if label]
+        if not labels:
             return ""
 
-        label_text = ", ".join(
-            f"{item.get('label')} ({float(item.get('confidence', 0.0)) * 100:.1f}%)"
-            for item in preds[:3]
-        )
-        return f"CNN hints (may be noisy): {label_text}."
+        if len(labels) == 1:
+            joined = labels[0]
+        elif len(labels) == 2:
+            joined = f"{labels[0]} or {labels[1]}"
+        else:
+            joined = f"{', '.join(labels[:-1])}, or {labels[-1]}"
+
+        return f"It might be {joined}."
 
     @staticmethod
     def _build_cnn_fallback_response(cnn_result: Dict[str, Any] | None) -> str:
@@ -615,16 +659,10 @@ class Router:
         if not preds:
             return ""
 
-        top = preds[0]
-        top_label = str(top.get("label") or "unknown object")
-        try:
-            top_conf = float(top.get("confidence", 0.0)) * 100.0
-        except Exception:
-            top_conf = 0.0
+        top_label = str(preds[0].get("label") or "unknown object")
 
         return (
-            "Multimodal vision is unavailable right now. "
-            f"Fallback classifier estimate: {top_label} ({top_conf:.1f}% confidence)."
+            f"I can't run full image analysis right now, but my best guess is {top_label}."
         )
 
     def analyze_image_file(self, file_path: str | None, prompt: str = "Describe this image in detail.") -> Dict[str, Any]:
@@ -708,7 +746,7 @@ class Router:
                     },
                 }
             if cnn_hints:
-                response = f"{response}\nOptional CNN hint (low confidence): {cnn_hints}"
+                response = f"{response} {cnn_hints}"
             if image_error:
                 response = f"{response}\nImage preprocessing warning: {image_error}"
             return {
@@ -1112,6 +1150,7 @@ class Router:
     ) -> Dict[str, Any]:
         route_started = time.perf_counter()
         entities = dict(entities or {})
+        verified_web_attempted = False
         intent = str(intent_result.get("intent", "general_qa") or "general_qa")
         confidence = float(intent_result.get("confidence", 0.0) or 0.0)
         recovered_intent = self._recover_intent_from_text(raw_text, entities, intent, confidence)
@@ -1222,11 +1261,19 @@ class Router:
             if intent == "web_search":
                 if self._is_small_talk(raw_text):
                     intent = "general_qa"
-                elif self._should_use_verified_web(raw_text, intent):
-                    verified = realtime_web.verified_answer(raw_text, llm=self.llm)
+                elif self.realtime_web_enabled:
+                    # No content-based gate: force every non-small-talk query
+                    # to the web whenever Verified Web Mode is on.
+                    verified_web_attempted = True
+                    web_query = self._resolve_web_query(raw_text, context)
+                    verified = realtime_web.verified_answer(web_query, llm=self.llm, compute_hint=compute_hint)
                     if verified.get("success"):
                         return done("web_search_verified", verified)
+                    # Verified web failed or was too thin -> fall through to the LLM;
+                    # do not re-attempt verified web and do not open a browser.
+                    intent = "general_qa"
                 else:
+                    # Toggle is off -> direct browser search, trusting the ML intent classifier.
                     return done(
                         "web_search_direct",
                         web_control.search(entities.get("search_query", raw_text), entities.get("platform", "google")),
@@ -1288,8 +1335,10 @@ class Router:
                     },
                 )
 
-            if self._should_use_verified_web(raw_text, intent):
-                verified = realtime_web.verified_answer(raw_text, llm=self.llm)
+            if not verified_web_attempted and self._should_use_verified_web(raw_text, intent):
+                verified_web_attempted = True
+                web_query = self._resolve_web_query(raw_text, context)
+                verified = realtime_web.verified_answer(web_query, llm=self.llm, compute_hint=compute_hint)
                 if verified.get("success"):
                     return done("general_verified_web", verified)
 
@@ -1305,6 +1354,7 @@ class Router:
                 intent=str(intent),
                 entities=entities,
                 compute_hint=compute_hint,
+                web_attempted_and_failed=verified_web_attempted,
             )
             try:
                 response = self.llm.generate(

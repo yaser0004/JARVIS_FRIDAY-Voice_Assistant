@@ -1,12 +1,10 @@
 from __future__ import annotations
 
-import json
 import re
 from datetime import datetime, timedelta, timezone
 from difflib import SequenceMatcher
-from typing import Any, Dict, Iterable, List, Tuple
-from urllib.error import URLError
-from urllib.request import Request, urlopen
+from typing import Any, Dict, Iterable, List
+from actions.common import fetch_json, response as _response
 
 try:
     from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -15,10 +13,6 @@ except Exception:
 
     class ZoneInfoNotFoundError(Exception):
         pass
-
-
-def _response(success: bool, text: str, data: Any = None) -> Dict[str, Any]:
-    return {"success": success, "response_text": text, "data": data}
 
 
 LOCATION_TIMEZONES: dict[str, str] = {
@@ -254,13 +248,8 @@ def _zone_datetime(zone_name: str) -> tuple[datetime | None, str]:
 
 def _zone_datetime_online(zone_name: str) -> tuple[datetime, str] | None:
     url = WORLD_TIME_API.format(zone=zone_name)
-    request = Request(url, headers={"User-Agent": "Mozilla/5.0"})
-    try:
-        with urlopen(request, timeout=REQUEST_TIMEOUT_SECONDS) as response:
-            payload = json.loads(response.read().decode("utf-8", errors="ignore"))
-    except (URLError, json.JSONDecodeError, TimeoutError, ValueError):
-        return None
-    except Exception:
+    payload = fetch_json(url, timeout=REQUEST_TIMEOUT_SECONDS)
+    if payload is None:
         return None
 
     raw_dt = str(payload.get("datetime") or "").strip()
@@ -409,7 +398,9 @@ def looks_like_time_query(text: str) -> bool:
         return True
 
     time_patterns = [
-        r"\bwhat(?:'s| is)? the time\b",
+        # _normalize_location strips apostrophes to a space, so "what's" arrives
+        # here as "what s" (and users also type "whats").
+        r"\bwhat(?:\s*'?s| is)? the time\b",
         r"\bwhat time is it\b",
         r"\btell me(?:\s+the)? time\b",
         r"\btime now\b",

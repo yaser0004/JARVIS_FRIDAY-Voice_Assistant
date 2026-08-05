@@ -15,14 +15,17 @@ _LEADING_PATTERNS = [
     re.compile(r"^\s*(?:can|could|would|will|shall)\s+(?:you|u)\s+", re.IGNORECASE),
     re.compile(r"^\s*would\s+you\s+mind\s+", re.IGNORECASE),
     re.compile(r"^\s*i\s+(?:need|want)\s+you\s+to\s+", re.IGNORECASE),
-    re.compile(r"^\s*i\s+(?:would|\'d)?\s*like\s+you\s+to\s+", re.IGNORECASE),
+    # "i'd" has no space before the contraction, so the separator must be optional.
+    re.compile(r"^\s*i\s*(?:'d|’d|would)?\s*like\s+you\s+to\s+", re.IGNORECASE),
     re.compile(r"^\s*help\s+me\s+(?:to\s+)?", re.IGNORECASE),
     re.compile(r"^\s*(?:please|kindly|just)\s+", re.IGNORECASE),
 ]
 
 _TRAILING_PATTERNS = [
-    re.compile(r"\s+(?:please|thanks|thank\s+you)\s*$", re.IGNORECASE),
-    re.compile(r"\s+(?:for\s+me|if\s+you\s+can|if\s+possible|right\s+now)\s*$", re.IGNORECASE),
+    # Trailing punctuation must be tolerated, otherwise "... for me?" keeps the
+    # filler and it leaks into app names and search queries.
+    re.compile(r"\s+(?:please|thanks|thank\s+you)\s*[.!?]*\s*$", re.IGNORECASE),
+    re.compile(r"\s+(?:for\s+me|if\s+you\s+can|if\s+possible|right\s+now)\s*[.!?]*\s*$", re.IGNORECASE),
 ]
 
 

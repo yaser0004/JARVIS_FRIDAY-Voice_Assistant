@@ -3,6 +3,8 @@ from __future__ import annotations
 import tkinter as tk
 from typing import Any, Dict
 
+from actions.common import response as _response
+
 
 _ROOT = None
 
@@ -13,10 +15,6 @@ def _get_root() -> tk.Tk:
         _ROOT = tk.Tk()
         _ROOT.withdraw()
     return _ROOT
-
-
-def _response(success: bool, text: str, data: Any = None) -> Dict[str, Any]:
-    return {"success": success, "response_text": text, "data": data}
 
 
 def handle(entities: Dict[str, Any]) -> Dict[str, Any]:
@@ -37,8 +35,10 @@ def handle(entities: Dict[str, Any]) -> Dict[str, Any]:
             return _response(True, "Clipboard updated.", {"text": payload})
 
         if action == "paste":
+            # We cannot inject keystrokes into the focused app; be honest about
+            # what actually happened instead of claiming a paste occurred.
             text = root.clipboard_get()
-            return _response(True, "Clipboard content ready to paste.", {"text": text})
+            return _response(True, "I read the clipboard; paste it with Ctrl+V where you need it.", {"text": text})
 
         return _response(False, f"Unsupported clipboard action: {action}")
     except Exception as exc:

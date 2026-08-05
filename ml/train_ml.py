@@ -23,7 +23,9 @@ except ModuleNotFoundError:
 
 
 ROOT = Path(__file__).resolve().parent.parent
-DATA_PATH = ROOT / "data" / "intents_augmented.csv"
+# Augmented training rows only; the held-out raw test set lives in
+# intents_test.csv and is scored by ml/evaluate.py.
+DATA_PATH = ROOT / "data" / "intents_train.csv"
 MODELS_DIR = ROOT / "ml" / "models"
 RESULTS_DIR = ROOT / "ml" / "results"
 
@@ -114,6 +116,10 @@ def main() -> None:
     log_latency = measure_latency(logreg, X_test, runs=1000)
 
     results = {
+        "note": (
+            "Metrics here are on a validation split of the augmented training data "
+            "(grouped by base_text). Held-out test metrics come from ml/evaluate.py."
+        ),
         "linearsvc": {
             **svc_metrics,
             "latency_ms": svc_latency,
@@ -132,8 +138,8 @@ def main() -> None:
     joblib.dump(logreg, MODELS_DIR / "logreg.pkl")
     joblib.dump(label_encoder, MODELS_DIR / "label_encoder.pkl")
 
-    print("LinearSVC accuracy:", svc_metrics["accuracy"])
-    print("LogReg accuracy:", log_metrics["accuracy"])
+    print("LinearSVC validation accuracy:", svc_metrics["accuracy"])
+    print("LogReg validation accuracy:", log_metrics["accuracy"])
     print("Results saved to ml/results/ml_results.json")
 
 

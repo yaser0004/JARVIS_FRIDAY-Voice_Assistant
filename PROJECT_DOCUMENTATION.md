@@ -1116,16 +1116,46 @@ Latest user input: [clipped raw text]
 
 #### Verified Web Decision Logic (`_should_use_verified_web`)
 
+No content-based classification: earlier builds tried to keyword-classify
+"does this query need the web" (research-query heuristics, freshness
+markers, etc.) before deciding whether to call `verified_answer()`. That
+approach kept missing real phrasings (lowercase queries, natural follow-ups,
+"set to release" style wording) and was removed. Current logic:
+
 ```
 _should_use_verified_web(raw_text, intent)
     ├── realtime_web_enabled must be True
     ├── Not empty, not small talk
-    ├── Must contain explicit markers: "search web", "look up", "latest",
-    │   "news", "today", "current", "update", "recent", "price",
-    │   "weather", "score", "stock"
-    ├── Intent must be web_search or general_qa
-    └── realtime_web.looks_like_research_query() must return True
+    └── Intent must be web_search or general_qa
 ```
+
+When Verified Web Mode is on, every non-small-talk conversational turn is
+force-pushed to `verified_answer()` - full stop. If that call fails (network
+issue, no usable sources), the turn falls through to the plain LLM for
+*that turn only*; it does not retry the web lookup a second time
+(`verified_web_attempted` guards against double fan-out). When the toggle is
+off, a `web_search`-intent query opens a browser tab directly instead
+(`web_control.search`), trusting the ML intent classifier's tag rather than
+re-deriving the decision.
+
+`realtime_web.classify_web_need()` (the tiered keyword classifier this
+replaced for routing) still exists and is *not* dead code - it backs
+`looks_like_research_query()`, which `ui/main_window.py` uses purely as a
+cosmetic "researching..." hint timer, unrelated to whether a web lookup
+actually happens.
+
+The general-LLM system prompt (used whenever a turn is answered without a
+live lookup - toggle off, or toggle on but the lookup failed) also carries a
+knowledge-cutoff-awareness instruction: it tells the model to compare its own
+self-known training cutoff against the real current date already injected
+into the prompt, and to say so plainly (and suggest enabling Verified Web
+Mode) rather than guess, for questions whose answer could plausibly have
+changed since then. This is deliberately not hardcoded to any specific
+model's cutoff date - it relies on the model's own self-knowledge, so it
+holds regardless of which LLM backend is plugged in. The prompt also adapts
+its wording depending on whether a web lookup was just attempted and failed
+this turn (in which case it won't tell the user to "enable" something that's
+already on).
 
 #### Vision Request Detection (`_is_visual_request`)
 
@@ -1527,6 +1557,29 @@ Multi-backend TTS engine with three synthesis backends and configurable voice pr
 | `stop()` | Immediately halt current playback |
 | `set_profile(profile)` | Switch between female/male voice |
 
+`speak_async` is backed by a single-worker executor (`max_workers=1`), so
+calls are strictly serialized - a second `speak_async()` queued while the
+first is still playing would previously just wait for the first to finish in
+full before starting, rather than interrupting it.
+
+#### Barge-In (interrupting a response mid-speech)
+
+`core/pipeline.py::JarvisPipeline._interrupt_in_flight_response()` is called
+unconditionally at the start of every new-interaction entry point
+(`process_text` - covers typed input and voice, since `process_voice`/
+`process_recorded_audio` both delegate to it - plus `analyze_image_file` and
+`analyze_camera`). It calls `tts.stop()` (halting whatever is currently
+playing, which frees the single TTS worker for the new response) and, best
+effort, `llm.cancel_current_generation()` on both `self.llm` and
+`self.router.llm` if present, so a stale in-flight generation from the
+previous turn doesn't race the new one. This is intentionally unconditional
+rather than gated on `current_state == "SPEAKING"` - pipeline state flips
+back to `IDLE` immediately after `speak_async()` is kicked off, not after
+playback actually finishes, so state alone can't tell you whether audio is
+still playing. The same helper backs the explicit "stop"/cancel voice command
+(`cancel_current_action`), which was refactored to call it too rather than
+duplicating the stop/cancel logic.
+
 ---
 
 ### 7.3 Wake Word Detection
@@ -1651,7 +1704,33 @@ User request: {user_prompt}"
 The `_sanitize_vision_response()` method:
 1. Strip leading colons, dashes, spaces
 2. If user didn't ask about time/date: remove leading time-stamp lines like "Today is..." or "The current time..."
-3. Rejoin remaining lines
+3. Classify each line as overview / detail / uncertainty content
+4. Reassemble as plain paragraphs - **no `"Overview:"`/`"Details:"`/`"Uncertainty:"` labels**
+   in the output. Overview and detail lines merge into one flowing paragraph
+   (they were only ever split apart by the label, not by meaning); uncertainty
+   content stays a separate unlabeled trailing paragraph so it still reads as
+   a distinct caveat. The labels used to show up in both the chat bubble and
+   (once TTS was wired up, see below) spoken aloud, which read as clutter.
+
+CNN classifier hints (`_format_cnn_hints`, used as a low-confidence
+supplement) and the CNN-only fallback response (`_build_cnn_fallback_response`,
+used when the multimodal vision LLM is unavailable) were similarly rewritten
+from a labeled, percentage-heavy format (`"CNN hints (may be noisy): laptop
+(73.2%), coffee mug (41.5%)..."`) to plain hedged sentences (`"It might be
+laptop or coffee mug."`) - the raw confidence numbers stay available in
+`data.cnn` for anything that wants them, they just don't clutter the prose.
+
+**TTS was silently never speaking these responses at all** when triggered
+from the UI (Attach Image/Screenshot + Send, camera-snapshot analyze) -
+`core/pipeline.py`'s `analyze_image_file`/`analyze_camera` only ever emitted
+the chat message, with no `self.tts` call anywhere in either method. (Voice
+commands like "what's on my screen" were unaffected - they route through
+`process_text`, which already had working TTS.) Both methods now call
+`self.tts.speak_async(response_text)` the same way `process_text` does,
+gated the same way (respects the cancel flag and the TTS-enabled toggle). No
+separate `speech_text` field was needed here (unlike the web-overview
+response) since the label removal above already makes the text equally
+clean for display and speech.
 
 ---
 
@@ -1983,60 +2062,115 @@ Browser-based web navigation and search with 100+ pre-mapped websites.
 
 ---
 
-### 9.5 Real-Time Web Intelligence
+### 9.5 Real-Time Web Intelligence ("Verified Web Mode")
 
 **File:** `actions/realtime_web.py`
-**Lines of Code:** 521
 
-Multi-source web intelligence engine that produces verified, citation-backed AI overviews.
+Multi-source web intelligence engine that produces synthesized, citation-backed
+AI overviews. This subsystem went through several rounds of fixes after real
+usage surfaced problems the original design didn't anticipate - notably, LLM
+synthesis was built but never actually wired up (`verified_answer()` always
+fell back to extractive sentence-splicing), and the routing heuristic
+repeatedly missed real-world phrasing. Both are now fixed; see below.
 
 #### Data Sources
 
 | Source | API | Data Type |
 |---|---|---|
-| **DuckDuckGo** | Instant Answer API (JSON) | Abstracts, related topics |
-| **Wikipedia** | REST API + OpenSearch | Article summaries |
-| **Wikidata** | SPARQL entity search | Entity descriptions |
-| **Google News** | RSS feed parser | Headlines with links |
+| **DuckDuckGo** | Instant Answer API + lite HTML search | Abstracts, related topics, organic results |
+| **Wikipedia** | REST API + OpenSearch (relevance-gated) | Article summaries |
+| **Wikidata** | Entity search API (relevance-gated) | Entity descriptions |
+| **Google News** | RSS feed parser (publisher-suffix stripped) | Headlines with links |
 
-#### Research Query Detection
+Wikipedia/Wikidata fetch the top 3 candidates and pick the one whose
+title/label best overlaps the query's significant tokens (dropping the result
+entirely on zero overlap), instead of blindly trusting whichever the search
+API ranked first - this fixes wrong-entity results for ambiguous names.
 
-The `looks_like_research_query()` heuristic checks for:
+#### Routing: no keyword classifier gates this anymore
 
-1. **Query length** ≥ 4 tokens (short queries stay local)
-2. **Not small talk** (excludes greetings, thanks)
-3. **Not system commands** (excludes "open", "play", "volume", etc.)
-4. **Web markers** present: "search web", "look up", "find online"
-5. **Freshness markers** + analysis terms: "latest news about", "current price of"
+See "Verified Web Decision Logic" above - when the toggle is on, every
+non-small-talk conversational query is force-pushed here; there is no
+content-based "does this need the web" heuristic in the routing path.
+
+#### Source Quality Pipeline (`_collect_sources` → ranked, filtered sources)
+
+```
+_collect_sources(query)
+    │
+    ├── 1. Fetch from all providers concurrently (8s deadline)
+    ├── 2. Drop promotional/ad content (_looks_like_promotional):
+    │       comparison-shopping CTAs ("stop browsing", "lowest price", ...)
+    │       and generic marketing filler ("helps you", "built for", ...)
+    └── 3. Deduplicate on the first ~8 significant words (not full text),
+            so near-identical scrapes of the same noisy source collapse
+            into one entry instead of both surviving
+
+verified_answer(query) then:
+    ├── Quality gate: require ≥2 surviving sources, or exactly 1 with
+    │   nonzero query-token overlap - otherwise fail cleanly (falls back
+    │   to the plain LLM path, which won't claim it looked anything up)
+    ├── _rank_sources_by_relevance(): re-rank by query-token overlap
+    │   (not fixed provider-scan order), capping any one provider at 2
+    │   top slots so it can't crowd out the rest
+    └── _consistency_score(): "high" (>0.22 overlap) / "moderate" (>0.10) /
+        "low" cross-source agreement
+```
 
 #### Synthesis Pipeline
 
 ```
-verified_answer(query)
+_build_overview(query, sources, llm)
     │
-    ├── 1. Collect snippets from all sources (parallel)
-    ├── 2. Deduplicate by signature normalization
-    ├── 3. Score cross-source consistency:
-    │       ├── "high"     (overlap ratio > 0.22)
-    │       ├── "moderate" (overlap ratio > 0.10)
-    │       └── "low"      (overlap ratio ≤ 0.10)
+    ├── 1. _synthesize_with_llm() - primary path:
+    │       ├── Evidence lines built from the RANKED sources ([1] = most relevant)
+    │       ├── Prompt instructs: answer-first framing; evidence-order priority
+    │       │   (don't let a lower-ranked, more novel-sounding source dominate
+    │       │   over the top-ranked, directly-relevant one); explicitly
+    │       │   distinguish confirmed/released facts from rumored/leaked/
+    │       │   expected ones; don't repeat a bare clickbait number claim as
+    │       │   if it were a real fact
+    │       ├── _validate_synthesis(): rejects empty/too-short(<8 words)/
+    │       │   too-long(>600 chars)/echoed-prompt/raw-URL output, but
+    │       │   otherwise accepts short, direct, single-sentence answers -
+    │       │   earlier validation over-rejected concise good answers
+    │       └── Diagnostic reason threaded to the trace log either way
+    │           (llm_none / llm_not_ready / no_evidence / generate_exception /
+    │           validation_rejected:<check> / "ok")
     │
-    ├── 4. LLM Synthesis (if available):
-    │       ├── Build evidence string with [1], [2] citations
-    │       ├── Prompt: "Create a concise AI overview..."
-    │       ├── Validate response (not an LLM error message)
-    │       └── Return synthesized overview with citations
-    │
-    ├── 5. Extractive Fallback (if LLM unavailable):
-    │       ├── Extract first sentence from each source
-    │       ├── Deduplicate by normalized signature
-    │       └── Concatenate top 3 sentences
-    │
-    └── 6. Format response with:
-            ├── AI overview text
-            ├── Consistency rating
-            └── Numbered source list with URLs
+    └── 2. Extractive fallback (only if LLM synthesis unavailable/rejected):
+            sentences selected from the relevance-ranked sources, preferring
+            ones that share a query token, falling back to unfiltered only
+            if that leaves nothing
 ```
+
+#### Response Formatting
+
+No more `"AI web overview:"` label or comma-separated source dump - both were
+found to read as unorganized clutter (and the label used to get spoken by
+TTS before the speech/display split below existed). Current shape:
+
+```
+<synthesized overview paragraph, with [1]/[2] citations>
+
+Limited sources - worth double-checking.      ← only shown when confidence is NOT high/moderate
+Sources: DuckDuckGo Search · Google News (2)  ← tidy line, not a comma run-on
+```
+
+The response `data` dict carries a separate `speech_text` - the overview text
+with citation brackets stripped, no label, no sources line - so TTS speaks
+clean prose while the chat bubble keeps the fuller structured text. Consumed
+in `core/pipeline.py::process_text` via `data.get("mode") ==
+"verified_web_overview"`.
+
+#### Follow-Up Query Resolution
+
+Short, low-content follow-ups ("look it up", "when was it released") carry no
+searchable topic of their own. `Router._resolve_web_query()` detects this
+(via the same significant-token test used for relevance ranking) and splices
+in the most recent substantive prior user turn from conversation context
+before calling `verified_answer()`, so the actual web query becomes e.g.
+`"whats the latest iphone? look it up"` instead of just `"look it up"`.
 
 ---
 

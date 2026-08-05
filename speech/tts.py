@@ -3,6 +3,7 @@
 import asyncio
 import io
 import os
+import shutil
 import subprocess
 import threading
 import time
@@ -41,6 +42,8 @@ class TextToSpeech:
         self.speed = speed
         self._executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="jarvis_tts")
         self._lock = threading.Lock()
+        self._loop_lock = threading.Lock()
+        self._edge_loop: Optional[asyncio.AbstractEventLoop] = None
         self._kokoro_module: Any | None = None
         self._edge_tts_module: Any | None = None
         self._pipeline: Any | None = None
@@ -146,7 +149,13 @@ class TextToSpeech:
         return arr.astype(np.float32, copy=False), int(sample_rate)
 
     def _synthesize_edge_tts(self, text: str) -> tuple[np.ndarray, int]:
-        return asyncio.run(self._synthesize_edge_tts_async(text))
+        # One long-lived loop per instance: asyncio.run() built and tore down an
+        # event loop on every utterance.
+        with self._loop_lock:
+            if self._edge_loop is None or self._edge_loop.is_closed():
+                self._edge_loop = asyncio.new_event_loop()
+            loop = self._edge_loop
+        return loop.run_until_complete(self._synthesize_edge_tts_async(text))
 
     def _ensure_pipeline(self) -> Any:
         kokoro = self._load_kokoro()
@@ -243,6 +252,68 @@ class TextToSpeech:
         self._pipeline = None
         self._pipeline_lang = ""
 
+    def _speak_os_fallback(self, text: str) -> tuple[bool, str]:
+        if os.name == "nt":
+            return self._speak_windows_fallback(text)
+        return self._speak_linux_fallback(text)
+
+    def _speak_linux_fallback(self, text: str) -> tuple[bool, str]:
+        # Offline last resort mirroring the Windows SAPI path: speech-dispatcher
+        # (spd-say ships with GNOME) first, then espeak-ng. Text goes in as a
+        # single argv element / stdin, never through a shell.
+        errors: list[str] = []
+
+        if shutil.which("spd-say"):
+            proc: Optional[subprocess.Popen[str]] = None
+            try:
+                proc = subprocess.Popen(
+                    ["spd-say", "--wait", text],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                )
+                self._sapi_proc = proc  # reuses the stop() terminate hook
+                _, stderr = proc.communicate(timeout=120)
+                if proc.returncode == 0:
+                    return True, ""
+                errors.append(f"spd-say: {(stderr or '').strip() or f'returncode={proc.returncode}'}")
+            except Exception as exc:
+                errors.append(f"spd-say: {exc}")
+            finally:
+                self._sapi_proc = None
+                if proc is not None and proc.poll() is None:
+                    try:
+                        proc.terminate()
+                    except Exception:
+                        pass
+
+        if shutil.which("espeak-ng"):
+            proc = None
+            try:
+                proc = subprocess.Popen(
+                    ["espeak-ng", "--stdin"],
+                    stdin=subprocess.PIPE,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                )
+                self._sapi_proc = proc
+                _, stderr = proc.communicate(input=text, timeout=120)
+                if proc.returncode == 0:
+                    return True, ""
+                errors.append(f"espeak-ng: {(stderr or '').strip() or f'returncode={proc.returncode}'}")
+            except Exception as exc:
+                errors.append(f"espeak-ng: {exc}")
+            finally:
+                self._sapi_proc = None
+                if proc is not None and proc.poll() is None:
+                    try:
+                        proc.terminate()
+                    except Exception:
+                        pass
+
+        return False, "; ".join(errors) or "no offline TTS tool found (install speech-dispatcher or espeak-ng)"
+
     def _speak_windows_fallback(self, text: str) -> tuple[bool, str]:
         if os.name != "nt":
             return False, "Windows SAPI fallback is unavailable on this OS."
@@ -300,27 +371,29 @@ class TextToSpeech:
             return
 
         start = time.perf_counter()
-        prefer_sapi = self._backend_mode == "sapi"
         attempt_edge = self._backend_mode in {"auto", "edge"}
         attempt_kokoro = self._backend_mode in {"auto", "kokoro"} and not self._skip_kokoro_runtime
 
         if attempt_edge:
             try:
                 samples, sample_rate = self._synthesize_edge_tts(text)
+                synth_ms = (time.perf_counter() - start) * 1000
                 with self._lock:
                     sd.stop()
                     if os.getenv("JARVIS_TTS_NO_PLAYBACK", "0").strip().lower() in {"1", "true", "yes"}:
                         log_performance(
                             "tts_speak",
-                            (time.perf_counter() - start) * 1000,
-                            "backend=edge;playback=skipped",
+                            synth_ms,
+                            f"backend=edge;playback=skipped;chars={len(text)}",
                         )
                         return
+                    playback_start = time.perf_counter()
                     sd.play(samples, sample_rate, blocking=True)
+                playback_ms = (time.perf_counter() - playback_start) * 1000
                 log_performance(
                     "tts_speak",
-                    (time.perf_counter() - start) * 1000,
-                    f"backend=edge;voice={self._edge_voice};sr={sample_rate}",
+                    synth_ms + playback_ms,
+                    f"backend=edge;voice={self._edge_voice};sr={sample_rate};synth_ms={synth_ms:.0f};playback_ms={playback_ms:.0f};chars={len(text)}",
                 )
                 return
             except Exception as exc:
@@ -336,30 +409,40 @@ class TextToSpeech:
         if attempt_kokoro:
             try:
                 samples, sample_rate = self._synthesize_kokoro(text)
+                synth_ms = (time.perf_counter() - start) * 1000
                 with self._lock:
                     sd.stop()
                     if os.getenv("JARVIS_TTS_NO_PLAYBACK", "0").strip().lower() in {"1", "true", "yes"}:
                         log_performance(
                             "tts_speak",
-                            (time.perf_counter() - start) * 1000,
-                            "backend=kokoro;playback=skipped",
+                            synth_ms,
+                            f"backend=kokoro;playback=skipped;chars={len(text)}",
                         )
                         return
+                    playback_start = time.perf_counter()
                     sd.play(samples, sample_rate, blocking=True)
-                log_performance("tts_speak", (time.perf_counter() - start) * 1000, f"backend=kokoro;sr={sample_rate}")
+                playback_ms = (time.perf_counter() - playback_start) * 1000
+                log_performance(
+                    "tts_speak",
+                    synth_ms + playback_ms,
+                    f"backend=kokoro;sr={sample_rate};synth_ms={synth_ms:.0f};playback_ms={playback_ms:.0f};chars={len(text)}",
+                )
                 return
             except Exception as exc:
                 log_performance("tts_error", 0.0, f"kokoro:{exc}")
 
-        fallback_ok, details = self._speak_windows_fallback(text)
+        fallback_label = "sapi" if os.name == "nt" else "linux_fallback"
+        fallback_ok, details = self._speak_os_fallback(text)
         if fallback_ok:
-            log_performance("tts_speak", (time.perf_counter() - start) * 1000, "backend=sapi")
+            log_performance(
+                "tts_speak", (time.perf_counter() - start) * 1000, f"backend={fallback_label};chars={len(text)}"
+            )
             return
 
         if details:
-            log_performance("tts_error", 0.0, f"sapi:{details}")
+            log_performance("tts_error", 0.0, f"{fallback_label}:{details}")
         else:
-            log_performance("tts_error", 0.0, "sapi:fallback failed")
+            log_performance("tts_error", 0.0, f"{fallback_label}:fallback failed")
 
     def speak_async(self, text: str) -> Future[None]:
         return self._executor.submit(self.speak, text)

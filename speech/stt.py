@@ -299,6 +299,7 @@ class SpeechToText:
         max_blocks = int(timeout / block_duration)
 
         recorded: List[np.ndarray] = []
+        speech_started = False
         silence_blocks = 0
         silence_limit = 6
         threshold = 0.01
@@ -308,9 +309,15 @@ class SpeechToText:
                 for _ in range(max_blocks):
                     chunk, _ = stream.read(block_samples)
                     chunk = chunk.flatten()
-                    recorded.append(chunk)
                     energy = float(np.sqrt(np.mean(np.square(chunk))))
 
+                    if not speech_started:
+                        if energy >= threshold:
+                            speech_started = True
+                            recorded.append(chunk)
+                        continue
+
+                    recorded.append(chunk)
                     if energy < threshold:
                         silence_blocks += 1
                     else:

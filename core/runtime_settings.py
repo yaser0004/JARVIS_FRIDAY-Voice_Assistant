@@ -14,6 +14,7 @@ DEFAULT_RUNTIME_SETTINGS: Dict[str, Any] = {
     "tts_enabled": True,
     "tts_profile": "female",
     "response_verbosity": "normal",
+    "realtime_web_enabled": False,
 }
 
 
@@ -34,6 +35,10 @@ def _merge_defaults(data: Dict[str, Any] | None) -> Dict[str, Any]:
     if verbosity not in {"brief", "normal", "detailed"}:
         verbosity = "normal"
     merged["response_verbosity"] = verbosity
+
+    if isinstance(data.get("realtime_web_enabled"), bool):
+        merged["realtime_web_enabled"] = data["realtime_web_enabled"]
+
     return merged
 
 

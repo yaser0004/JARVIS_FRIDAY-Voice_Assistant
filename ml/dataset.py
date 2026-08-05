@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import random
 import re
-from collections import Counter
 from pathlib import Path
 from typing import Dict, List
 
@@ -11,9 +10,9 @@ import pandas as pd
 
 ROOT = Path(__file__).resolve().parent.parent
 DATA_DIR = ROOT / "data"
-RAW_PATH = DATA_DIR / "intents_raw.csv"
-AUG_PATH = DATA_DIR / "intents_augmented.csv"
-DEFAULT_TARGET_SIZE = 4200
+TRAIN_PATH = DATA_DIR / "intents_train.csv"
+TEST_PATH = DATA_DIR / "intents_test.csv"
+DEFAULT_TEST_FRACTION = 0.2
 
 INTENT_MIN_COUNTS = {
     "launch_app": 180,
@@ -500,27 +499,90 @@ class DatasetBuilder:
         self.typo_aug = None
         self._init_augmenters()
 
-    def bootstrap_raw_dataset(self) -> pd.DataFrame:
-        rows: List[Dict[str, str]] = []
-        for intent, min_count in INTENT_MIN_COUNTS.items():
-            templates = TEMPLATES[intent]
-            paraphrases = MANUAL_PARAPHRASES[intent]
-            pool = templates + paraphrases
-            while len([r for r in rows if r["intent"] == intent]) < min_count:
-                text = random.choice(pool)
-                roll = random.random()
-                if roll < 0.25:
-                    text = random.choice(POLITE_PREFIXES) + text
-                elif roll < 0.5:
-                    text = text + random.choice(POLITE_SUFFIXES)
-                elif roll < 0.65:
-                    text = random.choice(POLITE_PREFIXES) + text + random.choice(POLITE_SUFFIXES)
-                rows.append({"text": text, "intent": intent})
+    def _base_pools(self) -> Dict[str, List[str]]:
+        pools: Dict[str, List[str]] = {}
+        for intent in INTENT_MIN_COUNTS:
+            bases = list(
+                dict.fromkeys(
+                    TEMPLATES.get(intent, [])
+                    + MANUAL_PARAPHRASES.get(intent, [])
+                    + INTENT_EDGE_CASES.get(intent, [])
+                    + STT_ERROR_EXAMPLES.get(intent, [])
+                )
+            )
+            pools[intent] = [str(b).strip() for b in bases if str(b).strip()]
+        return pools
 
-        df = pd.DataFrame(rows)
+    def split_bases(
+        self, test_fraction: float = DEFAULT_TEST_FRACTION
+    ) -> tuple[Dict[str, List[str]], Dict[str, List[str]]]:
+        """Hold out whole base sentences per intent BEFORE any augmentation.
+
+        Splitting augmented rows leaks trivial variants of the same sentence
+        across train/test, which is how this project once reported 100%
+        accuracy. Base-level holdout is the honest unit of generalization.
+        """
+        train_pools: Dict[str, List[str]] = {}
+        test_pools: Dict[str, List[str]] = {}
+        for intent, bases in self._base_pools().items():
+            if len(bases) < 5:
+                raise ValueError(f"intent '{intent}' needs at least 5 base sentences, has {len(bases)}")
+            shuffled = bases[:]
+            random.shuffle(shuffled)
+            n_test = max(2, round(len(shuffled) * test_fraction))
+            n_test = min(n_test, len(shuffled) - 3)
+            test_pools[intent] = shuffled[:n_test]
+            train_pools[intent] = shuffled[n_test:]
+        return train_pools, test_pools
+
+    def build_datasets(
+        self, test_fraction: float = DEFAULT_TEST_FRACTION
+    ) -> tuple[pd.DataFrame, pd.DataFrame]:
+        """Build and write intents_train.csv (augmented) and intents_test.csv (raw holdout)."""
+        train_pools, test_pools = self.split_bases(test_fraction)
+
+        rows: List[Dict[str, str]] = []
+        for intent, bases in train_pools.items():
+            for base in bases:
+                rows.append({"text": base, "intent": intent, "base_text": base})
+                variants = (
+                    self._augment_text(base)
+                    + self._stt_noise_variants(base)
+                    + self._rule_based_variants(base)
+                )
+                for variant in variants:
+                    value = str(variant).strip()
+                    if value and value != base:
+                        rows.append({"text": value, "intent": intent, "base_text": base})
+
+        train_df = (
+            pd.DataFrame(rows)
+            .drop_duplicates(subset=["text", "intent"])
+            .sample(frac=1.0, random_state=42)
+            .reset_index(drop=True)
+        )
+
+        test_df = pd.DataFrame(
+            [
+                {"text": base, "intent": intent, "base_text": base}
+                for intent, bases in test_pools.items()
+                for base in bases
+            ]
+        ).reset_index(drop=True)
+
+        base_overlap = set(train_df["base_text"].str.lower()) & set(test_df["base_text"].str.lower())
+        if base_overlap:
+            raise RuntimeError(f"train/test base overlap: {sorted(base_overlap)[:5]}")
+
+        # An augmented train variant can coincidentally reproduce a held-out base
+        # (e.g. "open chrome" -> "launch chrome"); drop those train rows.
+        test_texts = set(test_df["text"].str.lower())
+        train_df = train_df[~train_df["text"].str.lower().isin(test_texts)].reset_index(drop=True)
+
         DATA_DIR.mkdir(parents=True, exist_ok=True)
-        df.to_csv(RAW_PATH, index=False)
-        return df
+        train_df.to_csv(TRAIN_PATH, index=False)
+        test_df.to_csv(TEST_PATH, index=False)
+        return train_df, test_df
 
     def _augment_text(self, text: str) -> List[str]:
         out = {text}
@@ -613,112 +675,15 @@ class DatasetBuilder:
 
         return [item for item in variants if item and item != value]
 
-    @staticmethod
-    def _cap_to_target_size(aug_df: pd.DataFrame, target_size: int) -> pd.DataFrame:
-        min_total = sum(INTENT_MIN_COUNTS.values())
-        if target_size < min_total:
-            raise ValueError(
-                f"target_size ({target_size}) is below required intent minimum total ({min_total})"
-            )
-
-        selected_parts: List[pd.DataFrame] = []
-        selected_indices = set()
-
-        for intent, min_count in INTENT_MIN_COUNTS.items():
-            intent_rows = aug_df[aug_df["intent"] == intent]
-            if intent_rows.empty:
-                continue
-            take_n = min(min_count, len(intent_rows))
-            sampled = intent_rows.sample(n=take_n, random_state=42)
-            selected_parts.append(sampled)
-            selected_indices.update(sampled.index.tolist())
-
-        selected_df = (
-            pd.concat(selected_parts, ignore_index=False)
-            if selected_parts
-            else pd.DataFrame(columns=aug_df.columns)
-        )
-
-        remaining_needed = target_size - len(selected_df)
-        if remaining_needed > 0:
-            remaining_pool = aug_df.drop(index=list(selected_indices), errors="ignore")
-            if not remaining_pool.empty:
-                extra = remaining_pool.sample(
-                    n=min(remaining_needed, len(remaining_pool)),
-                    random_state=42,
-                    replace=False,
-                )
-                selected_df = pd.concat([selected_df, extra], ignore_index=False)
-
-        remaining_needed = target_size - len(selected_df)
-        if remaining_needed > 0:
-            extra = aug_df.sample(n=remaining_needed, random_state=42, replace=True)
-            selected_df = pd.concat([selected_df, extra], ignore_index=False)
-
-        return selected_df.reset_index(drop=True)
-
-    def augment(self, target_size: int = DEFAULT_TARGET_SIZE) -> pd.DataFrame:
-        if RAW_PATH.exists():
-            df = pd.read_csv(RAW_PATH)
-        else:
-            df = self.bootstrap_raw_dataset()
-
-        rows: List[Dict[str, str]] = []
-        for _, row in df.iterrows():
-            text = str(row["text"])
-            intent = str(row["intent"])
-            rows.append({"text": text, "intent": intent})
-            for aug_text in self._augment_text(text):
-                rows.append({"text": aug_text, "intent": intent})
-            for stt_text in self._stt_noise_variants(text):
-                rows.append({"text": stt_text, "intent": intent})
-
-        for intent, variants in MANUAL_PARAPHRASES.items():
-            for variant in variants:
-                rows.append({"text": variant, "intent": intent})
-
-        for intent, variants in INTENT_EDGE_CASES.items():
-            for variant in variants:
-                rows.append({"text": variant, "intent": intent})
-
-        for intent, variants in STT_ERROR_EXAMPLES.items():
-            for variant in variants:
-                rows.append({"text": variant, "intent": intent})
-
-        aug_df = pd.DataFrame(rows).drop_duplicates().sample(frac=1.0, random_state=42)
-
-        counts = Counter(aug_df["intent"].tolist())
-        for intent, min_count in INTENT_MIN_COUNTS.items():
-            while counts.get(intent, 0) < max(min_count, 80):
-                base = random.choice(TEMPLATES[intent] + MANUAL_PARAPHRASES[intent])
-                aug_df.loc[len(aug_df)] = [base, intent]
-                counts[intent] += 1
-
-        while len(aug_df) < target_size:
-            sampled = aug_df.sample(1, random_state=random.randint(1, 100000)).iloc[0]
-            rows_for_intent = TEMPLATES[str(sampled["intent"])] + MANUAL_PARAPHRASES[str(sampled["intent"])]
-            aug_df.loc[len(aug_df)] = [random.choice(rows_for_intent), sampled["intent"]]
-
-        aug_df = aug_df.drop_duplicates().reset_index(drop=True)
-        if len(aug_df) > target_size:
-            aug_df = self._cap_to_target_size(aug_df, target_size)
-        elif len(aug_df) < target_size:
-            needed = target_size - len(aug_df)
-            extras = aug_df.sample(min(needed, len(aug_df)), replace=True, random_state=42)
-            aug_df = pd.concat([aug_df, extras], ignore_index=True)
-
-        aug_df = aug_df.sample(frac=1.0, random_state=42).reset_index(drop=True)
-        aug_df.to_csv(AUG_PATH, index=False)
-        return aug_df
-
 
 if __name__ == "__main__":
     builder = DatasetBuilder(seed=42)
-    raw = builder.bootstrap_raw_dataset()
-    aug = builder.augment(target_size=DEFAULT_TARGET_SIZE)
-    print(f"Raw dataset size: {len(raw)}")
-    print(f"Augmented dataset size: {len(aug)}")
-    print(f"Raw CSV path: {RAW_PATH}")
-    print(f"Augmented CSV path: {AUG_PATH}")
-    print("Class distribution:")
-    print(aug["intent"].value_counts())
+    train_df, test_df = builder.build_datasets()
+    print(f"Train dataset size: {len(train_df)} ({train_df['base_text'].nunique()} base sentences)")
+    print(f"Test dataset size: {len(test_df)} raw held-out base sentences")
+    print(f"Train CSV path: {TRAIN_PATH}")
+    print(f"Test CSV path: {TEST_PATH}")
+    print("Train class distribution:")
+    print(train_df["intent"].value_counts())
+    print("Test class distribution:")
+    print(test_df["intent"].value_counts())

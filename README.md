@@ -53,6 +53,11 @@ python setup_models.py --only-intent-models
 python main.py
 ```
 
+On Windows, `launch_jarvis.bat` (repo root) is a double-clickable shortcut for
+this: it resolves its own folder, runs `main.py` with the project's
+`.venv_run` interpreter, and prints setup instructions instead of failing
+silently if that venv is missing.
+
 ## Linux setup
 
 Core functionality works out of the box. Individual capabilities shell out to

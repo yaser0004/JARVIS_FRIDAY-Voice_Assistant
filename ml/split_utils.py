@@ -8,7 +8,9 @@ from sklearn.model_selection import GroupShuffleSplit
 
 
 def load_intent_dataframe(data_path: Path) -> pd.DataFrame:
-    df = pd.read_csv(data_path, usecols=["text", "intent"])
+    df = pd.read_csv(data_path)
+    columns = [c for c in ("text", "intent", "base_text") if c in df.columns]
+    df = df[columns]
     df["text"] = df["text"].astype(str).str.strip().str.replace(r"\s+", " ", regex=True)
     df["intent"] = df["intent"].astype(str).str.strip()
     df = df[(df["text"] != "") & (df["intent"] != "")]
@@ -24,7 +26,13 @@ def split_intent_dataframe(
     random_state: int = 42,
     max_attempts: int = 20,
 ) -> Tuple[pd.DataFrame, pd.DataFrame]:
-    groups = df["text"].str.lower()
+    # Group by the augmentation source sentence when available so trivial
+    # variants of one utterance can never straddle the split; exact-text
+    # grouping is only a weak fallback for datasets without base_text.
+    if "base_text" in df.columns:
+        groups = df["base_text"].astype(str).str.lower()
+    else:
+        groups = df["text"].str.lower()
     all_intents = set(df["intent"].tolist())
 
     for offset in range(max_attempts):

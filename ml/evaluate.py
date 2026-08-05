@@ -8,9 +8,7 @@ from statistics import median
 from typing import Dict, List, Tuple
 
 import joblib
-import matplotlib.pyplot as plt
 import numpy as np
-import onnxruntime as ort
 import pandas as pd
 from sklearn.metrics import (
     accuracy_score,
@@ -19,17 +17,17 @@ from sklearn.metrics import (
     f1_score,
     precision_recall_fscore_support,
 )
-from sklearn.model_selection import train_test_split
-from transformers import DistilBertTokenizer
 
 
 ROOT = Path(__file__).resolve().parent.parent
-DATA_PATH = ROOT / "data" / "intents_augmented.csv"
+TEST_DATA_PATH = ROOT / "data" / "intents_test.csv"
 MODELS_DIR = ROOT / "ml" / "models"
 RESULTS_DIR = ROOT / "ml" / "results"
 
 
 def _preferred_onnx_providers() -> List[str]:
+    import onnxruntime as ort
+
     preferred = ["CUDAExecutionProvider", "CPUExecutionProvider"]
     available = ort.get_available_providers()
     selected = [provider for provider in preferred if provider in available]
@@ -54,35 +52,36 @@ def _onnx_tensor_dtype(tensor_type: str):
     return dtype_map.get(tensor_type, np.float32)
 
 
-def _load_test_split() -> Tuple[pd.Series, np.ndarray, joblib.Memory]:
-    df = pd.read_csv(DATA_PATH)
-    X = df["text"].astype(str)
-    y = df["intent"].astype(str)
+def _load_test_split() -> Tuple[pd.Series, np.ndarray, object]:
+    """Load the held-out raw test sentences written by ml/dataset.py.
+
+    These base sentences were excluded BEFORE augmentation, so no model has
+    seen them or any variant of them during training. (The old version
+    re-split the augmented training file here, which scored models on their
+    own training rows and reported meaningless ~100% accuracies.)
+    """
+    if not TEST_DATA_PATH.exists():
+        raise FileNotFoundError(
+            f"{TEST_DATA_PATH} not found. Run `python -m ml.dataset` first to build the split."
+        )
+    df = pd.read_csv(TEST_DATA_PATH)
+    X_test = df["text"].astype(str)
     le = joblib.load(MODELS_DIR / "label_encoder.pkl")
-    y_enc = le.transform(y)
-    _, X_test, _, y_test = train_test_split(
-        X,
-        y_enc,
-        test_size=0.2,
-        stratify=y_enc,
-        random_state=42,
-    )
+    y_test = le.transform(df["intent"].astype(str))
     return X_test, y_test, le
 
 
 def _model_size_mb(path: Path) -> float:
-    if path.is_file():
-        return path.stat().st_size / (1024 * 1024)
-    total = 0
-    for file in path.rglob("*"):
-        if file.is_file():
-            total += file.stat().st_size
-    return total / (1024 * 1024)
+    if not path.exists():
+        return 0.0
+    return path.stat().st_size / (1024 * 1024)
 
 
 def _latency_stats(fn, inputs: List[str], runs: int = 1000) -> Dict[str, float]:
     if not inputs:
         return {"median_ms": 0.0, "p95_ms": 0.0}
+    for i in range(min(10, len(inputs))):  # warmup: exclude first-call setup costs
+        fn(inputs[i])
     latencies = []
     for i in range(runs):
         sample = inputs[i % len(inputs)]
@@ -118,6 +117,8 @@ def _compute_metrics(y_true: np.ndarray, y_pred: np.ndarray, labels: List[str], 
 
 
 def _plot_confusion_matrix(cm: np.ndarray, labels: List[str], output_path: Path, title: str) -> None:
+    import matplotlib.pyplot as plt
+
     plt.figure(figsize=(11, 9))
     plt.imshow(cm, interpolation="nearest", cmap="Blues")
     plt.title(title)
@@ -135,6 +136,7 @@ def _plot_confusion_matrix(cm: np.ndarray, labels: List[str], output_path: Path,
 def _plot_loss_curve(history_path: Path, output_path: Path, title: str) -> None:
     if not history_path.exists():
         return
+    import matplotlib.pyplot as plt
 
     with history_path.open("r", encoding="utf-8") as f:
         history = json.load(f)
@@ -172,6 +174,8 @@ def _run_linearsvc(X_test: List[str]) -> Tuple[np.ndarray, Dict[str, float]]:
 
 
 def _run_bilstm(X_test: List[str]) -> Tuple[np.ndarray, Dict[str, float]]:
+    import onnxruntime as ort
+
     onnx_path = MODELS_DIR / "bilstm.onnx"
     with (MODELS_DIR / "tokenizer.pkl").open("rb") as f:
         tokenizer = pickle.load(f)
@@ -199,6 +203,9 @@ def _run_bilstm(X_test: List[str]) -> Tuple[np.ndarray, Dict[str, float]]:
 
 
 def _run_distilbert(X_test: List[str]) -> Tuple[np.ndarray, Dict[str, float]]:
+    import onnxruntime as ort
+    from transformers import DistilBertTokenizer
+
     model_path = MODELS_DIR / "distilbert_onnx" / "model.onnx"
     tokenizer = DistilBertTokenizer.from_pretrained("distilbert-base-uncased")
 
@@ -248,14 +255,25 @@ def main() -> None:
         },
         "distilbert": {
             "runner": _run_distilbert,
-            "artifact": MODELS_DIR / "distilbert_onnx",
+            # Size the deployed model file only — the directory also holds an
+            # unused int8 export that used to inflate the reported size.
+            "artifact": MODELS_DIR / "distilbert_onnx" / "model.onnx",
         },
     }
 
     report = {}
     for name, spec in models.items():
-        preds, latency = spec["runner"](test_list)
-        cm = confusion_matrix(y_test, preds)
+        if not spec["artifact"].exists():
+            report[name] = {"skipped": f"artifact missing: {spec['artifact'].name}"}
+            print(f"[evaluate] skipping {name}: {spec['artifact']} not found")
+            continue
+        try:
+            preds, latency = spec["runner"](test_list)
+        except Exception as exc:
+            report[name] = {"skipped": f"runner failed: {exc}"}
+            print(f"[evaluate] skipping {name}: {exc}")
+            continue
+        cm = confusion_matrix(y_test, preds, labels=np.arange(len(labels)))
         metrics = _compute_metrics(y_test, preds, labels, cm)
         report[name] = {
             **metrics,
@@ -289,6 +307,9 @@ def main() -> None:
     print(f"{'Model':<16} {'Accuracy':<10} {'MacroF1':<10} {'Median(ms)':<12} {'P95(ms)':<10} {'Size(MB)':<10}")
     print("-" * 96)
     for name, data in report.items():
+        if "skipped" in data:
+            print(f"{name:<16} skipped: {data['skipped']}")
+            continue
         print(
             f"{name:<16} "
             f"{data['accuracy']:<10.4f} "

@@ -992,14 +992,22 @@ class JarvisPipeline(QObject):
                 return False
         return bool(getattr(self.wake_word, "model", None) is not None)
 
-    def cancel_current_action(self) -> Dict[str, Any]:
-        self._trace("cancel_current_action_requested")
+    def _interrupt_in_flight_response(self, trace_prefix: str = "interrupt") -> tuple[bool, bool]:
+        """Cut off any playing/queued TTS speech and in-flight LLM generation.
+
+        Shared by the explicit "stop" command (cancel_current_action) and by
+        every new-request entry point (process_text, vision analysis), so
+        starting a new interaction always barges in on a prior response
+        instead of queuing behind it - speech/tts.py's TTS executor is a
+        single serialized worker, so an old speak_async() call left running
+        would otherwise finish playing in full before a new one can start.
+        """
         self._cancel_requested = True
-        if self.tts:
+        if self.tts is not None:
             try:
                 self.tts.stop()
             except Exception as exc:
-                trace_exception("backend.pipeline", exc, event="cancel_current_action_tts_stop_failed")
+                trace_exception("backend.pipeline", exc, event=f"{trace_prefix}_tts_stop_failed")
 
         llm_cancel_attempted = False
         llm_cancelled = False
@@ -1024,8 +1032,13 @@ class JarvisPipeline(QObject):
                 if bool(cancel_fn()):
                     llm_cancelled = True
             except Exception as exc:
-                trace_exception("backend.pipeline", exc, event="cancel_current_action_llm_cancel_failed")
+                trace_exception("backend.pipeline", exc, event=f"{trace_prefix}_llm_cancel_failed")
 
+        return llm_cancel_attempted, llm_cancelled
+
+    def cancel_current_action(self) -> Dict[str, Any]:
+        self._trace("cancel_current_action_requested")
+        llm_cancel_attempted, llm_cancelled = self._interrupt_in_flight_response("cancel_current_action")
         self._trace(
             "cancel_current_action_applied",
             llm_cancel_attempted=bool(llm_cancel_attempted),
@@ -1089,6 +1102,13 @@ class JarvisPipeline(QObject):
         self._require_initialized()
 
         self._trace("process_text_started", text_chars=len(str(text or "")), capture_tts_future=bool(capture_tts_future))
+
+        # Barge-in: cut off any speech/generation left over from a prior
+        # response before starting this one. State may already read IDLE by
+        # now even if TTS is still playing (state flips back to IDLE right
+        # after speak_async() is kicked off, not after playback finishes), so
+        # this is unconditional rather than gated on current_state.
+        self._interrupt_in_flight_response("process_text_barge_in")
 
         self._cancel_requested = False
         self._set_state("PROCESSING")
@@ -1203,31 +1223,46 @@ class JarvisPipeline(QObject):
 
         response_text = str(action_result.get("response_text", "I could not process that request."))
         raw_response_chars = len(response_text)
-        response_text = enforce_response_verbosity(response_text, self._response_verbosity)
+        action_data = action_result.get("data")
+        is_verified_web = isinstance(action_data, dict) and action_data.get("mode") == "verified_web_overview"
+
+        if is_verified_web:
+            # Structured multi-section report (label + overview + consistency + sources) -
+            # flattening/sentence-clipping it (as enforce_response_verbosity does for plain
+            # LLM prose) mangles the report. Keep it intact for chat/context and speak only
+            # the clean synthesized overview via the provider-supplied speech_text.
+            display_text = response_text
+            speech_text = str(action_data.get("speech_text") or "").strip() or display_text
+        else:
+            display_text = enforce_response_verbosity(response_text, self._response_verbosity)
+            speech_text = display_text
+
         self._trace(
             "process_text_response_prepared",
             raw_response_chars=raw_response_chars,
-            clipped_response_chars=len(response_text),
+            clipped_response_chars=len(display_text),
+            speech_chars=len(speech_text),
             verbosity=self._response_verbosity,
+            verified_web=is_verified_web,
         )
 
         if self.context is not None:
-            self.context.add_turn("assistant", response_text, embed=False)
+            self.context.add_turn("assistant", display_text, embed=False)
 
         self._persist_turn_async(
             role="assistant",
-            text=response_text,
+            text=display_text,
             intent=str(intent_result["intent"]),
             confidence=float(intent_result["confidence"]),
             embed_context_recent=True,
         )
 
-        self.new_message.emit("assistant", response_text)
+        self.new_message.emit("assistant", display_text)
 
         if not self._cancel_requested and self.tts is not None and self.tts_enabled:
             self._set_state("SPEAKING")
-            tts_future = self.tts.speak_async(response_text)
-            self._trace("process_text_tts_started", response_chars=len(response_text))
+            tts_future = self.tts.speak_async(speech_text)
+            self._trace("process_text_tts_started", response_chars=len(speech_text))
 
         self._set_state("IDLE")
         total_ms = (time.perf_counter() - request_start) * 1000
@@ -1348,6 +1383,7 @@ class JarvisPipeline(QObject):
             self._trace("analyze_image_file_failed", reason="router_unavailable")
             return {"success": False, "response_text": "Routing module is unavailable.", "data": {}}
 
+        self._interrupt_in_flight_response("analyze_image_file_barge_in")
         self._cancel_requested = False
         self._set_state("PROCESSING")
         self._emit_direct_intent_diagnostics("vision_query", 1.0, "vision_image")
@@ -1368,6 +1404,10 @@ class JarvisPipeline(QObject):
             mode=str((result.get("data") or {}).get("mode", "")),
         )
         self.new_message.emit("assistant", response_text)
+        if not self._cancel_requested and self.tts is not None and self.tts_enabled:
+            self._set_state("SPEAKING")
+            self.tts.speak_async(response_text)
+            self._trace("analyze_image_file_tts_started", response_chars=len(response_text))
         self._set_state("IDLE")
         return result
 
@@ -1378,6 +1418,7 @@ class JarvisPipeline(QObject):
             self._trace("analyze_camera_failed", reason="router_unavailable")
             return {"success": False, "response_text": "Routing module is unavailable.", "data": {}}
 
+        self._interrupt_in_flight_response("analyze_camera_barge_in")
         self._cancel_requested = False
         self._set_state("PROCESSING")
         self._emit_direct_intent_diagnostics("vision_query", 1.0, "vision_camera")
@@ -1398,6 +1439,10 @@ class JarvisPipeline(QObject):
             mode=str((result.get("data") or {}).get("mode", "")),
         )
         self.new_message.emit("assistant", response_text)
+        if not self._cancel_requested and self.tts is not None and self.tts_enabled:
+            self._set_state("SPEAKING")
+            self.tts.speak_async(response_text)
+            self._trace("analyze_camera_tts_started", response_chars=len(response_text))
         self._set_state("IDLE")
         return result
 

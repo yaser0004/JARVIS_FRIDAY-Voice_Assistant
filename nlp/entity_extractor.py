@@ -197,7 +197,7 @@ class EntityExtractor:
                 return app
         return ""
 
-    def extract_entities(self, text: str, intent: str) -> Dict[str, str]:
+    def extract_entities(self, text: str, intent: str, original_text: str | None = None) -> Dict[str, str]:
         text = str(text or "")
         normalized_text = normalize_command_text(text) or text.lower()
         lower_text = normalized_text.lower()
@@ -224,9 +224,14 @@ class EntityExtractor:
                 if candidate:
                     slots["app_name"] = candidate
 
-            cap = CAPITALIZED_APP_RE.search(normalized_text)
+            # Capitalization only survives in the caller's original text —
+            # normalize_command_text lowercases everything.
+            cap_source = str(original_text) if original_text else text
+            cap = CAPITALIZED_APP_RE.search(cap_source)
             if cap:
-                slots["app_name"] = self._clean_app_candidate(cap.group(1))
+                candidate = self._clean_app_candidate(cap.group(1))
+                if candidate:
+                    slots["app_name"] = candidate
 
         if intent in {"launch_app", "close_app", "switch_app"} and "app_name" not in slots:
             inferred_app = self._infer_app_from_text(normalized_text)
@@ -279,24 +284,29 @@ class EntityExtractor:
         elif any(k in lower_text for k in ["down", "decrease", "lower", "turn down"]):
             slots["direction"] = "down"
 
-        for power_cmd in [
-            "shutdown",
-            "restart",
-            "sleep",
-            "hibernate",
-            "lock",
-            "turn off monitor",
-            "monitor off",
-            "wifi on",
-            "wifi off",
-            "bluetooth on",
-            "bluetooth off",
-            "airplane mode on",
-            "airplane mode off",
-            "battery saver on",
-            "battery saver off",
+        # (phrase, canonical command). "sleep" needs an explicit power phrasing so
+        # "how much sleep do I need" doesn't become a suspend command.
+        for phrase, power_cmd in [
+            ("shutdown", "shutdown"),
+            ("restart", "restart"),
+            ("go to sleep", "sleep"),
+            ("sleep mode", "sleep"),
+            ("to sleep", "sleep"),
+            ("suspend", "sleep"),
+            ("hibernate", "hibernate"),
+            ("lock", "lock"),
+            ("turn off monitor", "turn off monitor"),
+            ("monitor off", "monitor off"),
+            ("wifi on", "wifi on"),
+            ("wifi off", "wifi off"),
+            ("bluetooth on", "bluetooth on"),
+            ("bluetooth off", "bluetooth off"),
+            ("airplane mode on", "airplane mode on"),
+            ("airplane mode off", "airplane mode off"),
+            ("battery saver on", "battery saver on"),
+            ("battery saver off", "battery saver off"),
         ]:
-            if power_cmd in lower_text:
+            if phrase in lower_text:
                 slots["power_command"] = power_cmd
                 break
 

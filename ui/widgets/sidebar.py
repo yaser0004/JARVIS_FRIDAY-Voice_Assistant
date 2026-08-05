@@ -128,7 +128,8 @@ class Sidebar(QWidget):
         intents_layout.addWidget(model_label)
 
         self.model_selector = QComboBox(self)
-        self.model_selector.addItems(["LinearSVC", "BiLSTM", "DistilBERT"])
+        # BiLSTM has no inference runtime (falls back to LinearSVC), so it is not offered here.
+        self.model_selector.addItems(["LinearSVC", "DistilBERT"])
         self.model_selector.setCurrentText("DistilBERT")
         intents_layout.addWidget(self.model_selector)
 

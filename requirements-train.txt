@@ -1,0 +1,21 @@
+# Training / export / evaluation only — not needed to run JARVIS.
+# Install on top of requirements.txt when retraining models under ml/.
+#   python -m pip install -r requirements.txt -r requirements-train.txt
+
+-r requirements.txt
+
+# BiLSTM training + ONNX export
+tensorflow==2.16.1
+tf2onnx==1.16.1
+optree>=0.9.1,<0.12.0
+
+# DistilBERT fine-tuning + ONNX export
+accelerate==0.31.0
+datasets==2.20.0
+optimum[onnxruntime-gpu]==1.20.0
+
+# Dataset augmentation
+nlpaug==1.1.11
+
+# Evaluation plots
+matplotlib==3.9.0

@@ -6,6 +6,7 @@ import traceback
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import QApplication
 
+from core.config import ASSETS_DIR
 from core.session_logging import SessionTerminalLogger, trace_event, trace_exception
 from ui.main_window import JarvisMainWindow
 
@@ -67,9 +68,13 @@ def _run() -> int:
         if hasattr(Qt.ApplicationAttribute, "AA_UseHighDpiPixmaps"):
             app.setAttribute(Qt.ApplicationAttribute.AA_UseHighDpiPixmaps)
 
-        with open("assets/style.qss", "r", encoding="utf-8") as f:
-            app.setStyleSheet(f.read())
-        trace_event("app.lifecycle", "stylesheet_loaded", path="assets/style.qss")
+        style_path = ASSETS_DIR / "style.qss"
+        try:
+            app.setStyleSheet(style_path.read_text(encoding="utf-8"))
+            trace_event("app.lifecycle", "stylesheet_loaded", path=str(style_path))
+        except OSError as exc:
+            print(f"JARVIS startup: stylesheet unavailable ({exc}); continuing unstyled.", flush=True)
+            trace_event("app.lifecycle", "stylesheet_missing", path=str(style_path), error=str(exc))
 
         print("JARVIS startup: creating main window...", flush=True)
         trace_event("app.lifecycle", "main_window_create_start")

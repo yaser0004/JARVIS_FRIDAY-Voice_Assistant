@@ -7,6 +7,7 @@ from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QColor, QLinearGradient, QPainter, QPen
 from PyQt6.QtWidgets import QWidget
 
+from core.session_logging import trace_event
 from ui.theme import CYAN
 
 
@@ -54,13 +55,22 @@ class WaveformWidget(QWidget):
             samples = np.squeeze(indata).astype(np.float32)
             self.ring.extend(samples)
 
-        self.stream = sd.InputStream(
-            channels=1,
-            samplerate=self.sample_rate,
-            blocksize=1024,
-            callback=callback,
-        )
-        self.stream.start()
+        # This stream only feeds the amplitude animation; it must never be able
+        # to crash a caller's state transition (e.g. hold-to-talk), which is
+        # exactly what happened when the device was busy/unavailable and this
+        # was unguarded — the caller's own capture never started, and its
+        # button/flags were left stuck with nothing left to reset them.
+        try:
+            self.stream = sd.InputStream(
+                channels=1,
+                samplerate=self.sample_rate,
+                blocksize=1024,
+                callback=callback,
+            )
+            self.stream.start()
+        except Exception as exc:
+            self.stream = None
+            trace_event("ui.waveform", "mic_stream_start_failed", error=str(exc))
 
     def _stop_mic_stream(self) -> None:
         if self.stream is None:
@@ -68,6 +78,8 @@ class WaveformWidget(QWidget):
         try:
             self.stream.stop()
             self.stream.close()
+        except Exception as exc:
+            trace_event("ui.waveform", "mic_stream_stop_failed", error=str(exc))
         finally:
             self.stream = None
 

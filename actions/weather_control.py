@@ -1,13 +1,13 @@
 from __future__ import annotations
 
-import json
 import os
 import re
 import time
-from typing import Any, Dict, Optional, Tuple
-from urllib.error import URLError
+from typing import Any, Dict, Tuple
+from functools import partial
 from urllib.parse import urlencode
-from urllib.request import Request, urlopen
+
+from actions.common import fetch_json, response as _response
 
 
 GEOCODE_API = "https://geocoding-api.open-meteo.com/v1/search"
@@ -20,20 +20,7 @@ DEFAULT_LOCATION = os.getenv("JARVIS_DEFAULT_WEATHER_LOCATION", "")
 _CACHE: Dict[Tuple[str, str], Tuple[float, Dict[str, Any]]] = {}
 
 
-def _response(success: bool, text: str, data: Any = None) -> Dict[str, Any]:
-    return {"success": success, "response_text": text, "data": data}
-
-
-def _fetch_json(url: str) -> Dict[str, Any] | None:
-    request = Request(url, headers={"User-Agent": "Mozilla/5.0"})
-    try:
-        with urlopen(request, timeout=REQUEST_TIMEOUT_SECONDS) as response:
-            raw = response.read().decode("utf-8", errors="ignore")
-        return json.loads(raw)
-    except (URLError, TimeoutError, ValueError, json.JSONDecodeError):
-        return None
-    except Exception:
-        return None
+_fetch_json = partial(fetch_json, timeout=REQUEST_TIMEOUT_SECONDS)
 
 
 def _normalize_location(value: str) -> str:

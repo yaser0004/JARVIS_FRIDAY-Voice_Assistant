@@ -44,7 +44,9 @@ except ModuleNotFoundError:
 
 
 ROOT = Path(__file__).resolve().parent.parent
-DATA_PATH = ROOT / "data" / "intents_augmented.csv"
+# Augmented training rows only; the held-out raw test set lives in
+# intents_test.csv and is scored by ml/evaluate.py.
+DATA_PATH = ROOT / "data" / "intents_train.csv"
 MODELS_DIR = ROOT / "ml" / "models"
 RESULTS_DIR = ROOT / "ml" / "results"
 

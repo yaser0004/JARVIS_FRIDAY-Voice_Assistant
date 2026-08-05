@@ -5,6 +5,8 @@ import webbrowser
 from typing import Any, Dict
 from urllib.parse import quote_plus
 
+from actions.common import response as _response
+
 
 PLATFORM_URLS = {
     "google": "https://google.com/search?q={}",
@@ -133,10 +135,6 @@ SITE_MAP = {
 }
 
 URL_LIKE = re.compile(r"^(https?://|www\.|\w+\.(com|org|net|io|edu))(.*)$", re.IGNORECASE)
-
-
-def _response(success: bool, text: str, data: Any = None) -> Dict[str, Any]:
-    return {"success": success, "response_text": text, "data": data}
 
 
 def search(query: str, platform: str = "google") -> Dict[str, Any]:

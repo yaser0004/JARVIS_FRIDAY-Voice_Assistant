@@ -4,18 +4,15 @@ import json
 import os
 import re
 import string
-import subprocess
 import time
 import webbrowser
 from difflib import SequenceMatcher
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 from urllib.parse import quote_plus
-from urllib.request import Request, urlopen
-
-import pygame
 
 from actions import app_control
+from actions.common import fetch_text, response as _response
 from core.config import APPDATA_DIR
 
 
@@ -59,12 +56,21 @@ PLATFORM_ALIASES = {
 }
 
 
+def _mixer():
+    """Lazy pygame mixer: local-file playback is optional, so importing this
+    module must not require an audio stack (web playback works without it)."""
+    import pygame
+
+    if not pygame.mixer.get_init():
+        pygame.mixer.init()
+    return pygame.mixer
+
+
 class LocalMediaLibrary:
     def __init__(self) -> None:
         self.files: List[Path] = []
         self.current_index: int = -1
-        if not pygame.mixer.get_init():
-            pygame.mixer.init()
+        _mixer()
         self.refresh()
 
     def refresh(self, force_rescan: bool = False) -> None:
@@ -98,19 +104,20 @@ class LocalMediaLibrary:
         return None
 
     def play_file(self, file: Path) -> None:
-        pygame.mixer.music.load(str(file))
-        pygame.mixer.music.play()
+        music = _mixer().music
+        music.load(str(file))
+        music.play()
         if file in self.files:
             self.current_index = self.files.index(file)
 
     def pause(self) -> None:
-        pygame.mixer.music.pause()
+        _mixer().music.pause()
 
     def resume(self) -> None:
-        pygame.mixer.music.unpause()
+        _mixer().music.unpause()
 
     def stop(self) -> None:
-        pygame.mixer.music.stop()
+        _mixer().music.stop()
 
     def next(self) -> Optional[Path]:
         if not self.files:
@@ -260,20 +267,18 @@ def media_index_summary() -> Dict[str, Any]:
     )
 
 
-def _response(success: bool, text: str, data: Any = None) -> Dict[str, Any]:
-    return {"success": success, "response_text": text, "data": data}
-
-
 def _open_spotify_search(title: str) -> None:
+    # webbrowser hands the URI to the OS handler without a cmd.exe hop, so
+    # user-supplied titles cannot smuggle shell metacharacters.
     uri = f"spotify:search:{quote_plus(title)}"
-    subprocess.Popen(["cmd", "/c", "start", "", uri], shell=False)
+    webbrowser.open(uri)
 
 
 def _youtube_first_video_url(query: str) -> str | None:
     search_url = f"https://www.youtube.com/results?search_query={quote_plus(query)}"
-    request = Request(search_url, headers={"User-Agent": "Mozilla/5.0"})
-    with urlopen(request, timeout=REQUEST_TIMEOUT_SECONDS) as response:
-        html = response.read().decode("utf-8", errors="ignore")
+    html = fetch_text(search_url, timeout=REQUEST_TIMEOUT_SECONDS)
+    if html is None:
+        return None
 
     match = re.search(r'"videoId":"([a-zA-Z0-9_-]{11})"', html)
     if not match:
@@ -325,7 +330,7 @@ def _play_from_platform(query: str, platform: str) -> Dict[str, Any]:
 
     if normalized == "apple_music":
         if app_control.is_app_available("apple music") or app_control.is_app_available("itunes"):
-            subprocess.Popen(["cmd", "/c", "start", "", f"https://music.apple.com/us/search?term={quote_plus(query)}"], shell=False)
+            webbrowser.open(f"https://music.apple.com/us/search?term={quote_plus(query)}")
             return _response(True, f"Playing {query} on Apple Music.", {"platform": "apple_music", "mode": "native"})
         if _open_web_platform("apple_music", query):
             return _response(True, f"Playing {query} on Apple Music web.", {"platform": "apple_music", "mode": "web"})

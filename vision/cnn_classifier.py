@@ -4,12 +4,8 @@ import json
 from pathlib import Path
 from typing import Any, Dict, List
 
+from actions.common import response as _response
 from core.config import CNN_VISION_LABELS_PATH, CNN_VISION_WEIGHTS_PATH
-from vision.cnn_scratch import ScratchVisionCNN, build_eval_transform
-
-
-def _response(success: bool, text: str, data: Any = None) -> Dict[str, Any]:
-    return {"success": success, "response_text": text, "data": data}
 
 
 class CNNImageClassifier:
@@ -23,7 +19,11 @@ class CNNImageClassifier:
 
     def _load_model(self) -> None:
         try:
+            # torch/torchvision stay lazy so the app imports (and starts) without
+            # them; the CNN is optional and its weights usually absent anyway.
             import torch
+
+            from vision.cnn_scratch import ScratchVisionCNN, build_eval_transform
 
             if not CNN_VISION_WEIGHTS_PATH.exists() or not CNN_VISION_LABELS_PATH.exists():
                 self._load_error = (

@@ -16,7 +16,6 @@ from speech.stt import SpeechToText
 
 
 class WakeWordDetector(QObject):
-    wake_word_detected = pyqtSignal()
     state_changed = pyqtSignal(str)
     transcript_ready = pyqtSignal(str)
     wake_acknowledged = pyqtSignal(str)
@@ -42,7 +41,6 @@ class WakeWordDetector(QObject):
         self._queue: "queue.Queue[np.ndarray]" = queue.Queue(maxsize=50)
         self._disabled_reason = ""
         self._phrase_fallback = self.stt is not None and bool(self.activation_phrases)
-        self._prefer_phrase_mode = self._phrase_fallback
         self._detection_paused = False
         self._speech_energy_threshold = 0.01
 
@@ -60,18 +58,16 @@ class WakeWordDetector(QObject):
 
         try:
             from openwakeword.model import Model as OWWModel
+            from openwakeword.utils import download_models
 
-            self.model = OWWModel(inference_framework="onnx")
-            if self._prefer_phrase_mode:
-                self._disabled_reason = "Using phrase-based wake mode from configured activation phrases."
+            download_models(["hey_jarvis_v0.1"])
+            self.model = OWWModel(wakeword_models=["hey_jarvis"], inference_framework="onnx")
         except Exception:
             try:
                 from openwakeword.model import Model as OWWModel
 
                 # Last fallback: use the library default backend if available.
-                self.model = OWWModel()
-                if self._prefer_phrase_mode:
-                    self._disabled_reason = "Using phrase-based wake mode from configured activation phrases."
+                self.model = OWWModel(wakeword_models=["hey_jarvis"])
             except Exception:
                 self.model = None
                 self._phrase_fallback = self.stt is not None and bool(self.activation_phrases)
@@ -229,7 +225,6 @@ class WakeWordDetector(QObject):
                         if score >= self.sensitivity:
                             latency = (time.perf_counter() - start) * 1000
                             log_performance("wake_word_trigger", latency)
-                            self.wake_word_detected.emit()
                             self.state_changed.emit("LISTENING")
                             self._play_chime()
                             try:
@@ -266,7 +261,6 @@ class WakeWordDetector(QObject):
                 continue
 
             log_performance("wake_word_trigger", 0.0, "mode=phrase_fallback")
-            self.wake_word_detected.emit()
             self.state_changed.emit("LISTENING")
             self._play_chime()
 
@@ -355,9 +349,7 @@ class WakeWordDetector(QObject):
             self._running = False
 
         target = None
-        if self._prefer_phrase_mode and self._phrase_fallback:
-            target = self._listen_loop_phrase_fallback
-        elif self.model is not None:
+        if self.model is not None:
             target = self._listen_loop
         elif self._phrase_fallback:
             target = self._listen_loop_phrase_fallback

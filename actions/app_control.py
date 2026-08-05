@@ -1,107 +1,21 @@
 from __future__ import annotations
 
 import json
-import os
 import re
-import subprocess
 import time
 from difflib import SequenceMatcher
 from pathlib import Path
 from typing import Any, Dict, List
 
 import psutil
-import pygetwindow as gw
 
+from actions.common import response as _response
 from core.config import APPDATA_DIR
+from platform_adapters import backend
 
-
-APP_MAP = {
-    "chrome": "chrome.exe",
-    "firefox": "firefox.exe",
-    "edge": "msedge.exe",
-    "spotify": "Spotify.exe",
-    "vscode": "Code.exe",
-    "visual studio code": "Code.exe",
-    "discord": "Discord.exe",
-    "notepad": "notepad.exe",
-    "notepad++": "notepad++.exe",
-    "calculator": "calc.exe",
-    "file explorer": "explorer.exe",
-    "task manager": "taskmgr.exe",
-    "paint": "mspaint.exe",
-    "word": "WINWORD.EXE",
-    "excel": "EXCEL.EXE",
-    "powerpoint": "POWERPNT.EXE",
-    "outlook": "OUTLOOK.EXE",
-    "onenote": "ONENOTE.EXE",
-    "vlc": "vlc.exe",
-    "steam": "Steam.exe",
-    "photoshop": "Photoshop.exe",
-    "illustrator": "Illustrator.exe",
-    "premiere": "Adobe Premiere Pro.exe",
-    "after effects": "AfterFX.exe",
-    "blender": "blender.exe",
-    "obs": "obs64.exe",
-    "telegram": "Telegram.exe",
-    "whatsapp": "WhatsApp.exe",
-    "slack": "slack.exe",
-    "teams": "Teams.exe",
-    "zoom": "Zoom.exe",
-    "skype": "Skype.exe",
-    "chrome canary": "chrome.exe",
-    "opera": "opera.exe",
-    "brave": "brave.exe",
-    "epic": "EpicGamesLauncher.exe",
-    "battle.net": "Battle.net.exe",
-    "origin": "Origin.exe",
-    "uplay": "upc.exe",
-    "intellij": "idea64.exe",
-    "pycharm": "pycharm64.exe",
-    "android studio": "studio64.exe",
-    "postman": "Postman.exe",
-    "git bash": "git-bash.exe",
-    "powershell": "powershell.exe",
-    "cmd": "cmd.exe",
-    "terminal": "wt.exe",
-    "snipping tool": "SnippingTool.exe",
-    "camera": "WindowsCamera.exe",
-    "photos": "PhotosApp.exe",
-    "movies": "Video.UI.exe",
-    "spotify launcher": "SpotifyLauncher.exe",
-    "audacity": "audacity.exe",
-    "acrobat": "Acrobat.exe",
-    "filezilla": "filezilla.exe",
-    "winrar": "WinRAR.exe",
-    "7zip": "7zFM.exe",
-    "control panel": "control.exe",
-    "registry editor": "regedit.exe",
-}
-
-SEARCH_ROOTS = [
-    os.getenv("APPDATA", ""),
-    os.getenv("LOCALAPPDATA", ""),
-    r"C:\Program Files",
-    r"C:\Program Files (x86)",
-]
 
 APP_INDEX_PATH = APPDATA_DIR / "app_index.json"
 INDEX_VERSION = 1
-
-EXECUTABLE_SCAN_ROOTS = [
-    os.path.join(os.getenv("ProgramFiles", r"C:\Program Files")),
-    os.path.join(os.getenv("ProgramFiles(x86)", r"C:\Program Files (x86)")),
-    os.path.join(os.getenv("LOCALAPPDATA", ""), "Programs"),
-]
-
-SHORTCUT_SCAN_ROOTS = [
-    os.path.join(os.getenv("APPDATA", ""), r"Microsoft\Windows\Start Menu\Programs"),
-    os.path.join(os.getenv("ProgramData", r"C:\ProgramData"), r"Microsoft\Windows\Start Menu\Programs"),
-    os.path.join(str(Path.home()), "Desktop"),
-]
-
-
-def _response(success: bool, text: str, data: Any = None) -> Dict[str, Any]:
-    return {"success": success, "response_text": text, "data": data}
 
 
 def _normalize_key(value: str) -> str:
@@ -174,70 +88,24 @@ def _register_app(index_map: Dict[str, Dict[str, str]], alias: str, record: Dict
         index_map[key] = record
         return
 
-    # Prefer executable paths over shortcuts when aliases collide.
-    if existing.get("kind") != "exe" and record.get("kind") == "exe":
+    # Prefer the platform's native launch kind (exe / command) when aliases collide.
+    preferred = backend.DEFAULT_APP_KIND
+    if existing.get("kind") != preferred and record.get("kind") == preferred:
         index_map[key] = record
-
-
-def _scan_shortcuts(index_map: Dict[str, Dict[str, str]]) -> int:
-    found = 0
-    for root in SHORTCUT_SCAN_ROOTS:
-        if not root:
-            continue
-        root_path = Path(root)
-        if not root_path.exists():
-            continue
-        try:
-            for candidate in root_path.rglob("*.lnk"):
-                alias = candidate.stem.replace("_", " ").replace("-", " ").strip()
-                if not alias:
-                    continue
-                _register_app(index_map, alias, _app_record("shortcut", str(candidate), "scan"))
-                found += 1
-        except Exception:
-            continue
-    return found
-
-
-def _scan_executables(index_map: Dict[str, Dict[str, str]]) -> int:
-    found = 0
-    for root in EXECUTABLE_SCAN_ROOTS:
-        if not root:
-            continue
-        root_path = Path(root)
-        if not root_path.exists():
-            continue
-        try:
-            for candidate in root_path.rglob("*.exe"):
-                name = candidate.stem.strip()
-                if not name:
-                    continue
-                if name.lower() in {"uninstall", "unins000"}:
-                    continue
-                _register_app(index_map, name, _app_record("exe", str(candidate), "scan"))
-                found += 1
-        except Exception:
-            continue
-    return found
 
 
 def build_app_index() -> Dict[str, Any]:
     apps: Dict[str, Dict[str, str]] = {}
 
-    for alias, executable in APP_MAP.items():
-        _register_app(apps, alias, _app_record("exe", executable, "builtin"))
+    for alias, target in backend.DEFAULT_APP_MAP.items():
+        _register_app(apps, alias, _app_record(backend.DEFAULT_APP_KIND, target, "builtin"))
 
-    shortcut_count = _scan_shortcuts(apps)
-    exe_count = _scan_executables(apps)
+    scan_stats = backend.scan_apps(lambda alias, record: _register_app(apps, alias, record))
 
     return {
         "version": INDEX_VERSION,
         "generated_at": time.time(),
-        "stats": {
-            "total_apps": len(apps),
-            "shortcuts_scanned": shortcut_count,
-            "executables_scanned": exe_count,
-        },
+        "stats": {"total_apps": len(apps), **scan_stats},
         "apps": apps,
     }
 
@@ -290,56 +158,14 @@ def _select_app_record(app_name: str) -> Dict[str, str] | None:
 
 def _find_executable(app_name: str) -> str | None:
     record = _select_app_record(app_name)
-    if record is not None and record.get("kind") == "exe":
+    if record is not None and record.get("kind") == backend.DEFAULT_APP_KIND:
         return str(record.get("path", ""))
 
     normalized = app_name.strip().lower()
-    if normalized in APP_MAP:
-        return APP_MAP[normalized]
+    if normalized in backend.DEFAULT_APP_MAP:
+        return backend.DEFAULT_APP_MAP[normalized]
 
-    needle = normalized.replace(" ", "")
-    for root in SEARCH_ROOTS:
-        if not root:
-            continue
-        root_path = Path(root)
-        if not root_path.exists():
-            continue
-        try:
-            for candidate in root_path.rglob("*.exe"):
-                if needle in candidate.stem.lower().replace(" ", ""):
-                    return str(candidate)
-        except Exception:
-            continue
-    return None
-
-
-def _try_launch_target(target_path: str) -> tuple[bool, str]:
-    target = str(target_path or "").strip()
-    if not target:
-        return False, "empty launch target"
-
-    # Preferred on Windows: ShellExecute handles shortcuts, App Paths, and file associations.
-    try:
-        if os.path.isabs(target):
-            abs_target = Path(target)
-            if abs_target.exists():
-                os.startfile(str(abs_target))
-                return True, "startfile"
-        else:
-            os.startfile(target)
-            return True, "startfile"
-    except Exception as start_exc:
-        start_error = str(start_exc)
-    else:
-        start_error = ""
-
-    try:
-        subprocess.Popen([target], shell=False)
-        return True, "subprocess"
-    except Exception as popen_exc:
-        popen_error = str(popen_exc)
-
-    return False, f"startfile: {start_error}; subprocess: {popen_error}"
+    return backend.find_executable(app_name)
 
 
 def launch_app(app_name: str) -> Dict[str, Any]:
@@ -356,19 +182,19 @@ def launch_app(app_name: str) -> Dict[str, Any]:
             target_path = str(selected.get("path", ""))
             kind = str(selected.get("kind", ""))
             if target_path:
-                launched, method = _try_launch_target(target_path)
+                launched, method = backend.launch_target(target_path)
                 if launched:
                     return _response(True, f"Launching {normalized}.", {"target": target_path, "kind": kind})
                 launch_errors.append(f"{target_path}: {method}")
 
         executable = _find_executable(normalized)
         if executable:
-            launched, method = _try_launch_target(executable)
+            launched, method = backend.launch_target(executable)
             if launched:
                 return _response(True, f"Launching {normalized}.", {"executable": executable, "method": method})
             launch_errors.append(f"{executable}: {method}")
 
-        launched, method = _try_launch_target(normalized)
+        launched, method = backend.launch_target(normalized)
         if launched:
             return _response(True, f"Attempting to launch {normalized} via system shell.", {"method": method})
 
@@ -392,30 +218,26 @@ def close_app(app_name: str) -> Dict[str, Any]:
             if stem:
                 target_tokens.add(stem)
 
-        for alias in APP_MAP:
+        for alias in backend.DEFAULT_APP_MAP:
             if target in alias:
                 target_tokens.add(alias.replace(" ", ""))
 
         killed = 0
-        for proc in psutil.process_iter(["name", "pid", "exe", "cmdline"]):
+        for proc in psutil.process_iter(["name", "pid", "exe"]):
             name = (proc.info.get("name") or "").lower()
             exe_path = (proc.info.get("exe") or "").lower()
-            cmdline = " ".join(proc.info.get("cmdline") or []).lower()
 
             proc_tokens = {
                 name.replace(" ", ""),
+                Path(name).stem.replace(" ", ""),
                 Path(exe_path).stem.replace(" ", ""),
             }
-            proc_blob = (name + " " + exe_path + " " + cmdline).replace(" ", "")
 
             should_kill = False
             for token in target_tokens:
                 if not token:
                     continue
                 if token in proc_tokens:
-                    should_kill = True
-                    break
-                if len(token) >= 4 and token in proc_blob:
                     should_kill = True
                     break
 
@@ -448,26 +270,20 @@ def switch_to_app(app_name: str) -> Dict[str, Any]:
         if not target:
             return _response(False, "Please specify an app name to switch to.")
 
-        windows = [window for window in gw.getAllWindows() if str(getattr(window, "title", "")).strip()]
         ranked: list[tuple[float, Any]] = []
-        for window in windows:
-            title = str(getattr(window, "title", "") or "").strip()
+        for title, handle in backend.list_windows():
             score = _window_match_score(target, title)
             if score >= 0.55:
-                ranked.append((score, window))
+                ranked.append((score, handle))
 
         if not ranked:
-            direct = gw.getWindowsWithTitle(target)
-            ranked = [(0.6, window) for window in direct]
+            ranked = [(0.6, handle) for _, handle in backend.find_windows_by_title(target)]
 
         if not ranked:
             return _response(False, f"I could not find an open window for {target}.")
 
         ranked.sort(key=lambda item: item[0], reverse=True)
-        window = ranked[0][1]
-        if window.isMinimized:
-            window.restore()
-        window.activate()
+        backend.activate_window(ranked[0][1])
         return _response(True, f"Switched to {target}.")
     except Exception as exc:
         return _response(False, f"I could not switch to {app_name}: {exc}", {"error": str(exc)})
