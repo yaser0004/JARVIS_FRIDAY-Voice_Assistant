@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import threading
 import time
@@ -8,7 +8,7 @@ from pathlib import Path
 import numpy as np
 import sounddevice as sd
 
-from PyQt6.QtCore import QTimer, Qt, pyqtSignal
+from PyQt6.QtCore import QRectF, QSize, QTimer, Qt, pyqtSignal
 from PyQt6.QtGui import QAction, QMouseEvent, QPainter, QPen, QPixmap
 from PyQt6.QtWidgets import (
     QCheckBox,
@@ -34,7 +34,6 @@ from PyQt6.QtWidgets import (
     QToolButton,
     QVBoxLayout,
     QWidget,
-    QStyle,
 )
 
 from core.compute_runtime import estimate_query_complexity
@@ -42,9 +41,17 @@ from core.config import APP_ICON_PATH
 from core.pipeline import JarvisPipeline
 from core.session_logging import trace_event, trace_exception
 from ui.system_tray import JarvisSystemTray
-from ui.theme import BG_MAIN, BORDER, FONT_BODY, FONT_MONO, load_fonts
+from ui.icons import app_icon, icon
+from ui.theme import (
+    body_font,
+    css,
+    manager as theme_manager,
+    mono_font,
+    set_persona,
+    theme,
+)
 from ui.widgets.chat_widget import ChatWidget
-from ui.widgets.orb_widget import OrbWidget
+from ui.widgets.orb import OrbWidget
 from ui.widgets.sidebar import Sidebar
 from ui.widgets.waveform_widget import WaveformWidget
 from speech.wakeword_config import DEFAULT_WAKEWORD_CONFIG, WAKEWORD_CONFIG_PATH
@@ -56,11 +63,12 @@ class RoundedContainer(QWidget):
     def paintEvent(self, event) -> None:
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        rect = self.rect().adjusted(1, 1, -1, -1)
+        rect = QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5)
 
-        painter.setBrush(BG_MAIN)
-        painter.setPen(QPen(BORDER, 1))
-        painter.drawRoundedRect(rect, 12, 12)
+        active = theme()
+        painter.setBrush(active.palette.bg)
+        painter.setPen(QPen(active.palette.border, 1))
+        painter.drawRoundedRect(rect, active.metrics.radius_lg, active.metrics.radius_lg)
         super().paintEvent(event)
 
 
@@ -73,7 +81,10 @@ class JarvisMainWindow(QMainWindow):
 
     def __init__(self) -> None:
         super().__init__()
-        load_fonts()
+        # main.py initializes the theme before constructing the window, but the
+        # QA harness builds JarvisMainWindow directly, so bootstrap here too.
+        # ThemeManager.initialize is cheap and safe to repeat.
+        theme_manager().initialize()
 
         self.pipeline: JarvisPipeline | None = None
         self._logs: list[str] = []
@@ -85,6 +96,7 @@ class JarvisMainWindow(QMainWindow):
         self._voice_sample_rate = 16000
         self._voice_capture_started_at = 0.0
         self._send_button_stop_mode = False
+        self._mic_recording = False
         self._long_task_hint_shown = False
         self._long_task_hint_text = "Processing, this may take a while..."
         self._attached_image_path: Path | None = None
@@ -127,7 +139,7 @@ class JarvisMainWindow(QMainWindow):
         center_layout.addWidget(self.orb, alignment=Qt.AlignmentFlag.AlignHCenter)
 
         self.llm_status_label = QLabel("", center_panel)
-        self.llm_status_label.setFont(FONT_MONO)
+        self.llm_status_label.setFont(mono_font())
         self.llm_status_label.setAlignment(Qt.AlignmentFlag.AlignHCenter)
         self.llm_status_label.setWordWrap(True)
         self.llm_status_label.setStyleSheet("color: rgba(180, 220, 255, 220);")
@@ -136,7 +148,7 @@ class JarvisMainWindow(QMainWindow):
         center_layout.addWidget(self.llm_status_label, alignment=Qt.AlignmentFlag.AlignHCenter)
 
         self.processing_hint_label = QLabel("", center_panel)
-        self.processing_hint_label.setFont(FONT_MONO)
+        self.processing_hint_label.setFont(mono_font())
         self.processing_hint_label.setAlignment(Qt.AlignmentFlag.AlignHCenter)
         self.processing_hint_label.setWordWrap(True)
         self.processing_hint_label.setStyleSheet("color: rgba(255, 190, 140, 220);")
@@ -147,18 +159,12 @@ class JarvisMainWindow(QMainWindow):
         center_layout.addWidget(self.waveform)
 
         self.plus_btn = QToolButton(center_panel)
-        self.plus_btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_FileDialogNewFolder))
         self.plus_btn.setToolTip("Attach image or toggle extras")
         self.plus_btn.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
         self.plus_btn.setFixedWidth(38)
 
         self.web_toggle_btn = QToolButton(center_panel)
         self.web_toggle_btn.setObjectName("webToggleButton")
-        try:
-            web_icon = self.style().standardIcon(QStyle.StandardPixmap.SP_DriveNetIcon)
-        except Exception:
-            web_icon = self.style().standardIcon(QStyle.StandardPixmap.SP_BrowserReload)
-        self.web_toggle_btn.setIcon(web_icon)
         self.web_toggle_btn.setToolTip("Web overview: OFF")
         self.web_toggle_btn.setCheckable(True)
         self.web_toggle_btn.setFixedWidth(38)
@@ -169,25 +175,25 @@ class JarvisMainWindow(QMainWindow):
         self.verified_web_action = QAction("Verified Web Mode", self)
         self.verified_web_action.setCheckable(True)
 
-        self.analyze_file_action = QAction("Attach Image", self.plus_menu)
+        self.analyze_file_action = QAction(icon("image"), "Attach Image", self.plus_menu)
         self.analyze_file_action.triggered.connect(self._analyze_image_from_file)
         self.plus_menu.addAction(self.analyze_file_action)
 
-        self.attach_screenshot_action = QAction("Attach Screenshot", self.plus_menu)
+        self.attach_screenshot_action = QAction(icon("screenshot"), "Attach Screenshot", self.plus_menu)
         self.attach_screenshot_action.triggered.connect(self._attach_screenshot)
         self.plus_menu.addAction(self.attach_screenshot_action)
 
-        self.attach_camera_action = QAction("Attach Camera Snapshot", self.plus_menu)
+        self.attach_camera_action = QAction(icon("camera"), "Attach Camera Snapshot", self.plus_menu)
         self.attach_camera_action.triggered.connect(self._attach_camera_snapshot)
         self.plus_menu.addAction(self.attach_camera_action)
 
         self.plus_menu.addSeparator()
 
-        self.view_attached_action = QAction("View Last Image", self.plus_menu)
+        self.view_attached_action = QAction(icon("eye"), "View Last Image", self.plus_menu)
         self.view_attached_action.triggered.connect(self._view_last_image)
         self.plus_menu.addAction(self.view_attached_action)
 
-        self.remove_attached_action = QAction("Remove Attached Image", self.plus_menu)
+        self.remove_attached_action = QAction(icon("trash"), "Remove Attached Image", self.plus_menu)
         self.remove_attached_action.triggered.connect(self._remove_attached_image)
         self.plus_menu.addAction(self.remove_attached_action)
 
@@ -208,11 +214,11 @@ class JarvisMainWindow(QMainWindow):
 
         self.attachment_label = QLabel("No image attached", self.attachment_bar)
         self.attachment_label.setWordWrap(True)
-        self.attachment_label.setFont(FONT_MONO)
+        self.attachment_label.setFont(mono_font())
         attachment_layout.addWidget(self.attachment_label, 1)
 
         self.attachment_remove_btn = QToolButton(self.attachment_bar)
-        self.attachment_remove_btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_DialogCloseButton))
+        self.attachment_remove_btn.setObjectName("flat")
         self.attachment_remove_btn.setToolTip("Remove attached image")
         self.attachment_remove_btn.clicked.connect(self._remove_attached_image)
         attachment_layout.addWidget(self.attachment_remove_btn)
@@ -227,10 +233,9 @@ class JarvisMainWindow(QMainWindow):
         self.input_box.setEnabled(False)
 
         self.send_btn = QPushButton("", center_panel)
-        self.send_btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_DialogApplyButton))
         self.send_btn.setToolTip("Send")
         self.send_btn.setFixedWidth(42)
-        self.send_btn.setFont(FONT_BODY)
+        self.send_btn.setFont(body_font())
         self.send_btn.clicked.connect(self._on_send_or_stop_clicked)
         self.send_btn.setEnabled(False)
 
@@ -240,10 +245,9 @@ class JarvisMainWindow(QMainWindow):
         self.inline_attachment_icon.setToolTip("Attached image")
 
         self.mic_btn = QPushButton("", center_panel)
-        self.mic_btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_MediaVolume))
         self.mic_btn.setToolTip("Hold to talk")
         self.mic_btn.setFixedWidth(42)
-        self.mic_btn.setFont(FONT_BODY)
+        self.mic_btn.setFont(body_font())
         self.mic_btn.pressed.connect(self._start_hold_to_talk)
         self.mic_btn.released.connect(self._stop_hold_to_talk)
         self.mic_btn.setEnabled(False)
@@ -267,7 +271,7 @@ class JarvisMainWindow(QMainWindow):
         right_layout.setSpacing(8)
 
         chat_title = QLabel("Conversation", right_panel)
-        chat_title.setFont(FONT_MONO)
+        chat_title.setFont(mono_font())
         right_layout.addWidget(chat_title)
 
         self.chat = ChatWidget(right_panel)
@@ -285,6 +289,8 @@ class JarvisMainWindow(QMainWindow):
         self.sidebar.settings_btn.clicked.connect(self._open_settings)
         self.sidebar.logs_btn.clicked.connect(self._open_logs)
         self.sidebar.model_selector.currentTextChanged.connect(self._on_intent_model_changed)
+        self._apply_icons()
+        theme_manager().changed.connect(self._on_theme_changed)
         self.log_requested.connect(self._append_log)
         self.voice_capture_failed.connect(self._on_hold_capture_failed)
         self.voice_capture_finished.connect(self._on_hold_capture_finished)
@@ -303,6 +309,49 @@ class JarvisMainWindow(QMainWindow):
 
     def _trace(self, event: str, **details) -> None:
         trace_event("ui.main_window", event, **details)
+
+    def _apply_icons(self) -> None:
+        """(Re)build every button icon from the active palette."""
+        self.setWindowIcon(app_icon(theme().palette.accent))
+
+        self.plus_btn.setIcon(icon("attach"))
+        self.web_toggle_btn.setIcon(icon("globe"))
+        self.attachment_remove_btn.setIcon(icon("close", theme().palette.text_dim, 16))
+
+        # These two carry live state, so route through their setters rather
+        # than assigning an icon that the next state change would contradict.
+        stop_mode = self._send_button_stop_mode
+        self._send_button_stop_mode = not stop_mode
+        self._set_send_button_mode(stop_mode)
+        self._set_mic_button_recording(self._mic_recording)
+
+        self.analyze_file_action.setIcon(icon("image"))
+        self.attach_screenshot_action.setIcon(icon("screenshot"))
+        self.attach_camera_action.setIcon(icon("camera"))
+        self.view_attached_action.setIcon(icon("eye"))
+        self.remove_attached_action.setIcon(icon("trash"))
+
+        for button in (self.plus_btn, self.web_toggle_btn, self.send_btn, self.mic_btn):
+            button.setIconSize(QSize(18, 18))
+        self.attachment_remove_btn.setIconSize(QSize(16, 16))
+
+    def _on_theme_changed(self) -> None:
+        """Repaint the custom-painted widgets.
+
+        Re-applying the stylesheet only refreshes QSS-driven widgets. The
+        shell, the orb, the waves and the chat bubbles paint themselves from
+        theme tokens, so they need an explicit invalidation, and every icon
+        has to be regenerated in the new accent.
+        """
+        self._apply_icons()
+        for widget in (self.root, self.orb, self.waveform, self.chat, self.sidebar):
+            if widget is not None:
+                widget.update()
+        for row in getattr(self.chat, "_items", []):
+            row.update()
+            for child in row.findChildren(QWidget):
+                child.update()
+        self._trace("theme_changed", theme=theme().name)
 
     @staticmethod
     def _assistant_name_from_profile(profile: str | None) -> str:
@@ -327,6 +376,9 @@ class JarvisMainWindow(QMainWindow):
             profile = "male" if self._assistant_name == "JARVIS" else "female"
 
         self._assistant_name = self._assistant_name_from_profile(profile)
+        # Persona drives the palette when the user has left the theme on
+        # "auto"; if they pinned a preset, this is a no-op by design.
+        set_persona(self._assistant_name)
         expansion = self._assistant_expansion(self._assistant_name)
         self.setWindowTitle(f"{self._assistant_name} - {expansion}")
         self.input_box.setPlaceholderText(f"Ask {self._assistant_name} anything...")
@@ -808,10 +860,10 @@ class JarvisMainWindow(QMainWindow):
         self._send_button_stop_mode = stop_mode
         self._trace("send_button_mode_changed", stop_mode=stop_mode)
         if stop_mode:
-            self.send_btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_MediaStop))
+            self.send_btn.setIcon(icon("stop", theme().palette.danger))
             self.send_btn.setToolTip("Stop")
         else:
-            self.send_btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_DialogApplyButton))
+            self.send_btn.setIcon(icon("send"))
             self.send_btn.setToolTip("Send")
 
     def _on_send_or_stop_clicked(self) -> None:
@@ -946,9 +998,16 @@ class JarvisMainWindow(QMainWindow):
                 self.mic_btn.setEnabled(True)
 
     def _set_mic_button_recording(self, recording: bool) -> None:
+        self._mic_recording = bool(recording)
+        palette = theme().palette
         if recording:
-            self.mic_btn.setStyleSheet("background: rgba(255, 96, 96, 65);")
+            self.mic_btn.setIcon(icon("mic_active", palette.danger))
+            self.mic_btn.setStyleSheet(
+                f"background: {css(palette.danger, 60)};"
+                f" border: 1px solid {css(palette.danger, 190)};"
+            )
         else:
+            self.mic_btn.setIcon(icon("mic"))
             self.mic_btn.setStyleSheet("")
 
     def _start_hold_to_talk(self) -> None:
@@ -1133,7 +1192,7 @@ class JarvisMainWindow(QMainWindow):
 
         viewer = QPlainTextEdit(dialog)
         viewer.setReadOnly(True)
-        viewer.setFont(FONT_MONO)
+        viewer.setFont(mono_font())
         viewer.setPlainText("\n".join(self._logs) if self._logs else "No logs yet.")
         layout.addWidget(viewer, 1)
 
@@ -1204,7 +1263,7 @@ class JarvisMainWindow(QMainWindow):
 
         profile_description = QLabel(dialog)
         profile_description.setWordWrap(True)
-        profile_description.setFont(FONT_MONO)
+        profile_description.setFont(mono_font())
 
         def refresh_profile_description() -> None:
             selected = str(tts_profile_combo.currentData() or "female")
@@ -1266,7 +1325,7 @@ class JarvisMainWindow(QMainWindow):
 
         compute_status = QLabel(compute_text, dialog)
         compute_status.setWordWrap(True)
-        compute_status.setFont(FONT_MONO)
+        compute_status.setFont(mono_font())
 
         wake_sensitivity_input = QDoubleSpinBox(dialog)
         wake_sensitivity_input.setRange(0.10, 0.95)
@@ -1353,7 +1412,7 @@ class JarvisMainWindow(QMainWindow):
 
         wake_config_path = QLabel(f"Wakeword config path: {WAKEWORD_CONFIG_PATH}", dialog)
         wake_config_path.setWordWrap(True)
-        wake_config_path.setFont(FONT_MONO)
+        wake_config_path.setFont(mono_font())
 
         llm_ready = bool(
             self.pipeline.router
@@ -1397,15 +1456,15 @@ class JarvisMainWindow(QMainWindow):
         if wake_enabled and not wake_ready and wake_reason:
             status.setText(status.text() + f"\nWake note: {wake_reason}")
         status.setWordWrap(True)
-        status.setFont(FONT_MONO)
+        status.setFont(mono_font())
 
         app_status = QLabel("App index: status available via Rescan Apps", dialog)
         app_status.setWordWrap(True)
-        app_status.setFont(FONT_MONO)
+        app_status.setFont(mono_font())
 
         music_status = QLabel("Music index: status available via Rescan Music", dialog)
         music_status.setWordWrap(True)
-        music_status.setFont(FONT_MONO)
+        music_status.setFont(mono_font())
 
         rescan_apps_btn = QPushButton("Rescan Apps", dialog)
         rescan_music_btn = QPushButton("Rescan Music", dialog)

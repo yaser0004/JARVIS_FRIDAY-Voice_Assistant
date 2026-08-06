@@ -2,7 +2,7 @@
 
 from collections import deque
 
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import QSize, Qt
 from PyQt6.QtWidgets import (
     QComboBox,
     QFrame,
@@ -11,12 +11,12 @@ from PyQt6.QtWidgets import (
     QPushButton,
     QProgressBar,
     QSizePolicy,
-    QStyle,
     QVBoxLayout,
     QWidget,
 )
 
-from ui.theme import FONT_BODY, FONT_DISPLAY, FONT_MONO
+from ui.icons import icon
+from ui.theme import body_font, display_font, manager as theme_manager, mono_font
 from ui.widgets.status_bar import MetricsStatusBar
 
 
@@ -52,12 +52,12 @@ class Sidebar(QWidget):
         root.setSpacing(10)
 
         self.logo_label = QLabel("JARVIS")
-        self.logo_label.setFont(FONT_DISPLAY)
+        self.logo_label.setFont(display_font(17, tracking=8.0))
         self.logo_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         root.addWidget(self.logo_label)
 
         self.status_label = QLabel("IDLE")
-        self.status_label.setFont(FONT_MONO)
+        self.status_label.setFont(mono_font())
         self.status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         root.addWidget(self.status_label)
 
@@ -65,7 +65,7 @@ class Sidebar(QWidget):
         root.addWidget(self.metrics)
 
         self.intent_toggle_btn = QPushButton("Intent Identifier >")
-        self.intent_toggle_btn.setFont(FONT_BODY)
+        self.intent_toggle_btn.setFont(body_font())
         self.intent_toggle_btn.setCheckable(True)
         self.intent_toggle_btn.setChecked(False)
         self.intent_toggle_btn.toggled.connect(self._toggle_intent_panel)
@@ -78,14 +78,14 @@ class Sidebar(QWidget):
         intents_layout.setSpacing(6)
 
         intents_title = QLabel("Recent Intents")
-        intents_title.setFont(FONT_MONO)
+        intents_title.setFont(mono_font())
         intents_layout.addWidget(intents_title)
 
         self.intent_rows: list[QHBoxLayout] = []
         for _ in range(5):
             row = QHBoxLayout()
             name = QLabel("-")
-            name.setFont(FONT_MONO)
+            name.setFont(mono_font())
             bar = QProgressBar()
             bar.setRange(0, 100)
             bar.setValue(0)
@@ -97,34 +97,34 @@ class Sidebar(QWidget):
             self.intent_bars.append(bar)
 
         diagnostics_title = QLabel("Top Candidates")
-        diagnostics_title.setFont(FONT_MONO)
+        diagnostics_title.setFont(mono_font())
         intents_layout.addWidget(diagnostics_title)
 
         self.candidate_rows: list[QLabel] = []
         for _ in range(3):
             lbl = QLabel("-")
-            lbl.setFont(FONT_MONO)
+            lbl.setFont(mono_font())
             lbl.setWordWrap(False)
             intents_layout.addWidget(lbl)
             self.candidate_rows.append(lbl)
 
         self.runtime_info_label = QLabel("runtime: -")
-        self.runtime_info_label.setFont(FONT_MONO)
+        self.runtime_info_label.setFont(mono_font())
         self.runtime_info_label.setWordWrap(True)
         intents_layout.addWidget(self.runtime_info_label)
 
         catalog_title = QLabel("Supported Intents")
-        catalog_title.setFont(FONT_MONO)
+        catalog_title.setFont(mono_font())
         intents_layout.addWidget(catalog_title)
 
         self.intent_catalog_label = QLabel("-")
-        self.intent_catalog_label.setFont(FONT_MONO)
+        self.intent_catalog_label.setFont(mono_font())
         self.intent_catalog_label.setWordWrap(True)
         self.intent_catalog_label.setText(self._format_intent_catalog())
         intents_layout.addWidget(self.intent_catalog_label)
 
         model_label = QLabel("Intent Model")
-        model_label.setFont(FONT_BODY)
+        model_label.setFont(body_font())
         intents_layout.addWidget(model_label)
 
         self.model_selector = QComboBox(self)
@@ -141,20 +141,27 @@ class Sidebar(QWidget):
         controls.setSpacing(8)
 
         self.settings_btn = QPushButton("")
-        self.settings_btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_FileDialogDetailedView))
         self.settings_btn.setToolTip("Settings")
         self.settings_btn.setFixedWidth(40)
-        self.settings_btn.setFont(FONT_BODY)
+        self.settings_btn.setFont(body_font())
         controls.addWidget(self.settings_btn, 1)
 
         self.logs_btn = QPushButton("")
-        self.logs_btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_FileDialogInfoView))
         self.logs_btn.setToolTip("Logs")
         self.logs_btn.setFixedWidth(40)
-        self.logs_btn.setFont(FONT_BODY)
+        self.logs_btn.setFont(body_font())
         controls.addWidget(self.logs_btn, 1)
 
         root.addLayout(controls)
+
+        self._apply_icons()
+        theme_manager().changed.connect(self._apply_icons)
+
+    def _apply_icons(self) -> None:
+        self.settings_btn.setIcon(icon("settings"))
+        self.logs_btn.setIcon(icon("logs"))
+        for button in (self.settings_btn, self.logs_btn):
+            button.setIconSize(QSize(18, 18))
 
     def _toggle_intent_panel(self, expanded: bool) -> None:
         self.intent_panel.setVisible(expanded)

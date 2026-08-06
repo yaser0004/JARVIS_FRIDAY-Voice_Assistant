@@ -7,7 +7,7 @@ import psutil
 from PyQt6.QtCore import QTimer
 from PyQt6.QtWidgets import QHBoxLayout, QLabel, QWidget
 
-from ui.theme import FONT_MONO
+from ui.theme import mono_font
 
 
 class MetricsStatusBar(QWidget):
@@ -22,7 +22,8 @@ class MetricsStatusBar(QWidget):
         layout.setSpacing(16)
 
         for label in [self.cpu_label, self.gpu_label, self.ram_label]:
-            label.setFont(FONT_MONO)
+            label.setObjectName("readout")
+            label.setFont(mono_font())
             layout.addWidget(label)
 
         self._gpu_load_cached = 0.0

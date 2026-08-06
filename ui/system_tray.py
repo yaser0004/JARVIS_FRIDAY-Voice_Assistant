@@ -3,19 +3,22 @@
 from pathlib import Path
 
 from PyQt6.QtGui import QAction, QIcon
-from PyQt6.QtWidgets import QMenu, QStyle, QSystemTrayIcon
+from PyQt6.QtWidgets import QMenu, QSystemTrayIcon
 
 from core.session_logging import trace_event
+from ui.icons import app_icon, icon as themed_icon
+from ui.theme import manager as theme_manager, theme
 
 
 class JarvisSystemTray(QSystemTrayIcon):
     def __init__(self, window, icon_path: Path, parent=None) -> None:
+        # assets/icon.ico ships as a zero-byte placeholder, so the drawn
+        # brand mark is the normal path rather than a fallback.
         icon_exists = bool(icon_path.exists() and icon_path.stat().st_size > 0)
-        if icon_path.exists() and icon_path.stat().st_size > 0:
-            icon = QIcon(str(icon_path))
-        else:
-            icon = window.style().standardIcon(QStyle.StandardPixmap.SP_ComputerIcon)
+        icon = QIcon(str(icon_path)) if icon_exists else app_icon(theme().palette.accent)
         super().__init__(icon, parent)
+        self._icon_path = icon_path
+        self._has_file_icon = icon_exists
         self.window = window
         self.wake_enabled = True
         self._assistant_name = "JARVIS"
@@ -24,9 +27,9 @@ class JarvisSystemTray(QSystemTrayIcon):
         self._wake_initializing_state = False
 
         menu = QMenu()
-        self.show_action = QAction("Show Window", self)
-        self.toggle_wake_action = QAction("Toggle Wake Word", self)
-        self.quit_action = QAction("Quit", self)
+        self.show_action = QAction(themed_icon("maximize"), "Show Window", self)
+        self.toggle_wake_action = QAction(themed_icon("mic"), "Toggle Wake Word", self)
+        self.quit_action = QAction(themed_icon("close"), "Quit", self)
 
         menu.addAction(self.show_action)
         menu.addAction(self.toggle_wake_action)
@@ -40,7 +43,15 @@ class JarvisSystemTray(QSystemTrayIcon):
 
         self.activated.connect(self.on_activated)
         self.set_wake_tooltip_state(wake_enabled=False, wake_ready=False, wake_initializing=False)
+        theme_manager().changed.connect(self._on_theme_changed)
         trace_event("ui.tray", "initialized", icon_path=str(icon_path), custom_icon=icon_exists)
+
+    def _on_theme_changed(self) -> None:
+        if not self._has_file_icon:
+            self.setIcon(app_icon(theme().palette.accent))
+        self.show_action.setIcon(themed_icon("maximize"))
+        self.toggle_wake_action.setIcon(themed_icon("mic"))
+        self.quit_action.setIcon(themed_icon("close"))
 
     def _apply_tooltip(self) -> None:
         if self._wake_enabled_state and self._wake_ready_state:

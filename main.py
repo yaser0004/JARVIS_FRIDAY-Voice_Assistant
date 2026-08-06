@@ -6,9 +6,9 @@ import traceback
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import QApplication
 
-from core.config import ASSETS_DIR
 from core.session_logging import SessionTerminalLogger, trace_event, trace_exception
 from ui.main_window import JarvisMainWindow
+from ui.theme import init_theme, manager as theme_manager
 
 
 def _run() -> int:
@@ -68,13 +68,23 @@ def _run() -> int:
         if hasattr(Qt.ApplicationAttribute, "AA_UseHighDpiPixmaps"):
             app.setAttribute(Qt.ApplicationAttribute.AA_UseHighDpiPixmaps)
 
-        style_path = ASSETS_DIR / "style.qss"
+        # Theme must resolve before the window is built: JarvisMainWindow
+        # constructs every widget with self.pipeline still None, so it cannot
+        # ask the pipeline which persona is active until start_pipeline().
         try:
-            app.setStyleSheet(style_path.read_text(encoding="utf-8"))
-            trace_event("app.lifecycle", "stylesheet_loaded", path=str(style_path))
-        except OSError as exc:
-            print(f"JARVIS startup: stylesheet unavailable ({exc}); continuing unstyled.", flush=True)
-            trace_event("app.lifecycle", "stylesheet_missing", path=str(style_path), error=str(exc))
+            active = init_theme()
+            trace_event(
+                "app.lifecycle",
+                "theme_initialized",
+                theme=active.name,
+                preset=theme_manager().resolved_preset_key(),
+                display_font=active.type.display,
+                body_font=active.type.body,
+                mono_font=active.type.mono,
+            )
+        except Exception as exc:
+            print(f"JARVIS startup: theme unavailable ({exc}); continuing unstyled.", flush=True)
+            trace_exception("app.lifecycle", exc)
 
         print("JARVIS startup: creating main window...", flush=True)
         trace_event("app.lifecycle", "main_window_create_start")

@@ -14,7 +14,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from ui.theme import FONT_BODY, FONT_MONO
+from ui.theme import body_font, mix, mono_font, theme, with_alpha
 
 
 class ChatBubble(QWidget):
@@ -33,19 +33,19 @@ class ChatBubble(QWidget):
         normalized_assistant = str(assistant_name or "JARVIS").strip().upper() or "JARVIS"
         role_text = normalized_assistant if str(role).strip().lower() == "assistant" else role.upper()
         self.role_label = QLabel(role_text)
-        self.role_label.setFont(FONT_MONO)
-        self.role_label.setStyleSheet("color: rgba(144, 184, 194, 160);")
+        self.role_label.setObjectName("readout")
+        self.role_label.setFont(mono_font(tracking=6.0))
 
         self.message_label = QLabel(text)
         self.message_label.setWordWrap(True)
-        self.message_label.setFont(FONT_BODY)
+        self.message_label.setFont(body_font())
         self.message_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
         self.message_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         self.message_label.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
 
         self.intent_label = QLabel(intent or "")
-        self.intent_label.setFont(FONT_MONO)
-        self.intent_label.setStyleSheet("color: rgba(144, 184, 194, 130);")
+        self.intent_label.setObjectName("readout")
+        self.intent_label.setFont(mono_font())
         self.intent_label.setVisible(bool(intent))
 
         body = QVBoxLayout(self)
@@ -82,17 +82,22 @@ class ChatBubble(QWidget):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
 
+        active = theme()
+        palette = active.palette
         rect = self.rect().adjusted(1, 1, -1, -1)
+
+        # The user's own turn sits closer to the accent; the assistant's turn
+        # stays on the neutral surface so long replies stay comfortable.
         if self.role == "user":
-            fill = QColor(6, 48, 58, 210)
-            border = QColor(0, 245, 255, 50)
+            fill = with_alpha(mix(palette.surface_alt, palette.accent, 0.16), 236)
+            border = with_alpha(palette.accent, 70)
         else:
-            fill = QColor(6, 15, 24, 220)
-            border = QColor(0, 245, 255, 100)
+            fill = with_alpha(palette.surface, 236)
+            border = palette.border
 
         painter.setBrush(fill)
         painter.setPen(QPen(border, 1))
-        painter.drawRoundedRect(rect, 12, 12)
+        painter.drawRoundedRect(rect, active.metrics.radius_lg, active.metrics.radius_lg)
         super().paintEvent(event)
 
 
