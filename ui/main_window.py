@@ -889,6 +889,8 @@ class JarvisMainWindow(QMainWindow):
         dialog = QDialog(self)
         dialog.setWindowTitle("Image Preview")
         dialog.resize(920, 620)
+        dialog.show()
+        apply_dark_titlebar(dialog, theme().palette.is_dark)
 
         layout = QVBoxLayout(dialog)
         layout.setContentsMargins(12, 12, 12, 12)
@@ -1276,7 +1278,10 @@ class JarvisMainWindow(QMainWindow):
         dialog = QDialog(self)
         dialog.setWindowTitle(f"{self._assistant_name} Logs")
         dialog.setModal(True)
-        dialog.resize(560, 420)
+        dialog.resize(720, 460)
+        # Native frame, but not a light grey one on top of a dark window.
+        dialog.show()
+        apply_dark_titlebar(dialog, theme().palette.is_dark)
 
         layout = QVBoxLayout(dialog)
         layout.setContentsMargins(16, 16, 16, 16)
@@ -1387,27 +1392,16 @@ class JarvisMainWindow(QMainWindow):
         self._trace("shutdown_for_exit_completed")
 
     def _prompt_close_behavior(self) -> str:
-        dialog = QMessageBox(self)
-        dialog.setWindowTitle(f"Exit {self._assistant_name}")
-        dialog.setIcon(QMessageBox.Icon.Question)
-        dialog.setText(f"Choose what to do when closing {self._assistant_name}.")
-        dialog.setInformativeText("Run in background, close completely, or cancel.")
+        """One of "background", "close" or "cancel".
 
-        background_btn = dialog.addButton("Run in Background", QMessageBox.ButtonRole.AcceptRole)
-        close_btn = dialog.addButton("Close Completely", QMessageBox.ButtonRole.DestructiveRole)
-        cancel_btn = dialog.addButton(QMessageBox.StandardButton.Cancel)
+        closeEvent branches on these exact strings; any dismissal route must
+        yield "cancel" so the window is never closed without a choice.
+        """
+        from ui.dialogs.close_prompt import ClosePrompt
 
-        dialog.setDefaultButton(background_btn)
-        dialog.exec()
-
-        clicked = dialog.clickedButton()
-        if clicked == close_btn:
-            return "close"
-        if clicked == background_btn:
-            return "background"
-        if clicked == cancel_btn:
-            return "cancel"
-        return "cancel"
+        choice = ClosePrompt.ask(self._assistant_name, self)
+        self._trace("close_prompt_choice", choice=choice)
+        return choice
 
     def force_quit(self) -> None:
         self._trace("force_quit_requested")

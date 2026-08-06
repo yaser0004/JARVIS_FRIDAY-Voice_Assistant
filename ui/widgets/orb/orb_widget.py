@@ -388,19 +388,16 @@ class OrbWidget(QWidget):
                                                 self.devicePixelRatioF()))
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
 
-        # On a light surface the luminous orb has nothing to glow against, so
-        # it gets its own dark viewport to sit in.
-        if not palette.is_dark:
-            viewport = QRadialGradient(cx, cy, short * 0.46)
-            viewport.setColorAt(0.0, QColor(6, 10, 16, 255))
-            viewport.setColorAt(0.82, QColor(6, 10, 16, 235))
-            viewport.setColorAt(1.0, QColor(6, 10, 16, 0))
-            painter.setPen(Qt.PenStyle.NoPen)
-            painter.setBrush(viewport)
-            painter.drawEllipse(QRectF(cx - short * 0.46, cy - short * 0.46,
-                                       short * 0.92, short * 0.92))
-
-        painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_Plus)
+        # Additive compositing only makes sense over a dark ground: on a light
+        # surface every stroke brightens what is already near-white and the orb
+        # disappears. This used to be worked around by painting an almost-black
+        # disc behind it, which read as a hole punched in the window. The light
+        # theme now draws the orb as dark ink over the page instead, using its
+        # own dark OrbProfile and ordinary alpha compositing.
+        painter.setCompositionMode(
+            QPainter.CompositionMode.CompositionMode_Plus if palette.is_dark
+            else QPainter.CompositionMode.CompositionMode_SourceOver
+        )
 
         rot = rotation_matrix(yaw_deg=self._yaw, pitch_deg=self._pitch)
 

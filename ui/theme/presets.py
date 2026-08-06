@@ -183,10 +183,11 @@ MONOCHROME = Theme(
 # The palette is now a real Fluent light ground with its own accent and its
 # own semantic colours, all darkened enough to hold contrast on white.
 #
-# The orb profile is still the inherited luminous one: OrbWidget paints a dark
-# viewport disc behind the orb when `palette.is_dark` is False. Giving light a
-# properly dark orb profile means reconciling that disc first, which is a
-# separate change.
+# It now has its own dark-ink orb profile too. OrbWidget used to paint an
+# almost-black disc behind the orb whenever is_dark was False, because its
+# additive compositing needs a dark ground -- which read as a hole punched
+# through the window. On light it now composites normally and these colours
+# are the ink, so the disc is gone.
 # ---------------------------------------------------------------------------
 
 _LIGHT_ACCENT = _c("#0f6cbd")
@@ -213,11 +214,13 @@ LIGHT = Theme(
         is_dark=False,
     ),
     orb=OrbProfile(
-        core=_c("#eaf9ff"),
-        filament_a=_c("#4fd8ff"),
-        filament_b=_c("#0a84ff"),
-        bloom=_c("#00a6ff"),
-        ring=_c("#bfefff"),
+        # Dark ink on a light page. Drawn with ordinary alpha compositing,
+        # so these darken what is behind them rather than adding to it.
+        core=_c("#0b3f6e"),
+        filament_a=_c("#1d6fb8"),
+        filament_b=_c("#0a3f70"),
+        bloom=_c("#7fb4e0"),
+        ring=_c("#14548f"),
         filaments=22,
         points=72,
         rings=3,
