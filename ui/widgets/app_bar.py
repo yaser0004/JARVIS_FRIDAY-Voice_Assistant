@@ -12,10 +12,11 @@ from __future__ import annotations
 
 from PyQt6.QtCore import QSize, Qt, pyqtSignal
 from PyQt6.QtGui import QPainter
-from PyQt6.QtWidgets import QHBoxLayout, QLabel, QToolButton, QWidget
+from PyQt6.QtWidgets import QHBoxLayout, QLabel, QSizePolicy, QToolButton, QWidget
 
 from ui.icons import icon, pixmap
 from ui.theme import display_font, manager as theme_manager, mono_font, theme, with_alpha
+from ui.widgets.orb import OrbWidget
 
 
 class StateDot(QWidget):
@@ -53,6 +54,7 @@ class StateDot(QWidget):
 WINDOW_BUTTON_W = 44
 WINDOW_BUTTON_H = 32
 BAR_HEIGHT = 44
+MARK_SIZE = 28
 
 
 class AppBar(QWidget):
@@ -74,8 +76,22 @@ class AppBar(QWidget):
         row.setContentsMargins(14, 0, 0, 0)
         row.setSpacing(10)
 
+        # The orb lives here now, at mark size, instead of being a hero
+        # element that grew and shrank as the conversation came and went. It
+        # is the assistant's presence: always visible, reacting to state.
+        # Below COMPACT_SIZE_THRESHOLD it drops to a simplified geometry, so
+        # this costs a fraction of what the full weave did.
+        self.orb = OrbWidget(self)
+        self.orb.setFixedSize(MARK_SIZE, MARK_SIZE)
+        self.orb.setMinimumSize(MARK_SIZE, MARK_SIZE)
+        self.orb.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+        row.addWidget(self.orb)
+
+        # Static fallback for animation_quality="minimal": a frozen orb reads
+        # as a hung app, so that setting swaps in the drawn brand mark.
         self.mark = QLabel(self)
-        self.mark.setFixedSize(20, 20)
+        self.mark.setFixedSize(MARK_SIZE, MARK_SIZE)
+        self.mark.setVisible(False)
         row.addWidget(self.mark)
 
         self.brand = QLabel("JARVIS", self)
@@ -182,9 +198,24 @@ class AppBar(QWidget):
         self.maximize_btn.setToolTip("Restore" if maximized else "Maximize")
         self.maximize_btn.setIcon(icon("restore" if maximized else "maximize"))
 
+    def set_static_mark(self, static: bool) -> None:
+        """Swap the live orb for the drawn brand mark, or back.
+
+        Used by animation_quality="minimal": a motionless orb reads as a hung
+        app, so the static path shows a deliberate logo instead.
+        """
+        self.orb.setVisible(not static)
+        self.mark.setVisible(static)
+
+    def set_state(self, state: str) -> None:
+        normalized = str(state or "IDLE").strip().upper()
+        self.dot.set_state(normalized)
+        self.state_label.setText(normalized.lower())
+        self.orb.set_state(normalized)
+
     def _apply_theme(self) -> None:
         active = theme()
-        self.mark.setPixmap(pixmap("brand", active.palette.accent, 20,
+        self.mark.setPixmap(pixmap("brand", active.palette.accent, MARK_SIZE,
                                    self.devicePixelRatioF()))
         self.brand.setFont(display_font(13, tracking=7.0))
         self.diagnostics_btn.setIcon(icon("search"))
@@ -202,8 +233,3 @@ class AppBar(QWidget):
 
     def set_brand_name(self, name: str) -> None:
         self.brand.setText(str(name or "JARVIS").strip().upper() or "JARVIS")
-
-    def set_state(self, state: str) -> None:
-        normalized = str(state or "IDLE").strip().upper()
-        self.dot.set_state(normalized)
-        self.state_label.setText(normalized.lower())

@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import threading
 import time
@@ -8,7 +8,7 @@ from pathlib import Path
 import numpy as np
 import sounddevice as sd
 
-from PyQt6.QtCore import QEvent, QRectF, QSize, QTimer, Qt, pyqtSignal
+from PyQt6.QtCore import QByteArray, QEvent, QRectF, QSize, QTimer, Qt, pyqtSignal
 from PyQt6.QtGui import QAction, QMouseEvent, QPainter, QPen, QPixmap
 from PyQt6.QtWidgets import (
     QCheckBox,
@@ -42,11 +42,11 @@ from core.pipeline import JarvisPipeline
 from core.session_logging import trace_event, trace_exception
 from ui.native import WindowChrome
 from ui.system_tray import JarvisSystemTray
-from ui.ui_settings import load_ui_settings
+from ui.ui_settings import load_ui_settings, update_ui_settings
 from ui.widgets.app_bar import AppBar
 from ui.widgets.composer import Composer
 from ui.widgets.diagnostics_panel import DiagnosticsPanel
-from ui.widgets.orb_stage import OrbStage
+from ui.widgets.empty_state import EmptyState
 from ui.icons import app_icon, icon
 from ui.theme import (
     body_font,
@@ -210,17 +210,18 @@ class JarvisMainWindow(QMainWindow):
         self.diagnostics = DiagnosticsPanel(self.root)
         body.addWidget(self.diagnostics, 0)
 
-        # The orb is the hero on an empty conversation and scales down to a
-        # live presence once there is something to read.
-        # Spacers around the orb let the empty state centre it vertically and
-        # the conversation state pin it to the top, without two layouts.
+        # The orb is a permanent live mark in the app bar, so the column no
+        # longer reflows around a hero element. Spacers centre the empty
+        # state; once a transcript exists the chat takes the stretch instead.
         column_layout.addStretch(1)
         self._spacer_top = column_layout.count() - 1
 
-        self.orb_stage = OrbStage(column)
-        self.orb = self.orb_stage.orb
-        self.waveform = self.orb_stage.waves
-        column_layout.addWidget(self.orb_stage)
+        self.empty_state = EmptyState(column)
+        # Part of the QA harness contract: window.orb and window.waveform must
+        # keep resolving to real widgets.
+        self.orb = self.app_bar.orb
+        self.waveform = self.empty_state.waves
+        column_layout.addWidget(self.empty_state)
 
         self.chat = ChatWidget(column)
         column_layout.addWidget(self.chat, 0)
@@ -341,7 +342,7 @@ class JarvisMainWindow(QMainWindow):
         self._long_task_hint_timer.setSingleShot(True)
         self._long_task_hint_timer.timeout.connect(self._on_long_task_hint_timeout)
         self._refresh_attachment_actions()
-        self._sync_orb_stage()
+        self._sync_conversation_state()
         self._trace(
             "initialized",
             width=self.width(),
@@ -390,7 +391,7 @@ class JarvisMainWindow(QMainWindow):
         # alone would leave the blur carrying the previous theme's colour.
         if getattr(self, "_chrome", None) is not None and self._chrome.active:
             self._sync_chrome_tint()
-        for widget in (self.root, self.app_bar, self.orb_stage, self.orb,
+        for widget in (self.root, self.app_bar, self.empty_state, self.orb,
                        self.waveform, self.chat, self.diagnostics):
             if widget is not None:
                 widget.update()
@@ -431,7 +432,10 @@ class JarvisMainWindow(QMainWindow):
         self.composer.set_placeholder(f"Ask {self._assistant_name} anything")
         self.chat.set_assistant_name(self._assistant_name)
         self.app_bar.set_brand_name(self._assistant_name)
-        self.orb_stage.set_greeting(self._greeting_text())
+        self.empty_state.set_greeting(
+            self._greeting_text(),
+            f'Ask me anything, or say "hey {self._assistant_name.title()}"',
+        )
         self.tray.set_assistant_name(self._assistant_name)
 
     def _start_long_task_hint_timer(self, delay_ms: int = 2400, hint_text: str = "Processing, this may take a while...") -> None:
@@ -506,6 +510,40 @@ class JarvisMainWindow(QMainWindow):
         x = geo.x() + (geo.width() - self.width()) // 2
         y = geo.y() + (geo.height() - self.height()) // 2
         self.move(x, y)
+
+    # -- geometry persistence ---------------------------------------------
+
+    def _restore_geometry(self) -> None:
+        """Put the window back where it was left.
+
+        window_geometry and window_maximized have been defined and validated
+        in ui_settings since the previous overhaul with nothing reading them.
+        Applied after the chrome installs: Qt's frame margins are briefly
+        stale on the very first sizing, and restoring before that settles
+        produces a window a few pixels larger than it was saved at.
+        """
+        settings = load_ui_settings()
+        blob = str(settings.get("window_geometry") or "")
+        restored = False
+        if blob:
+            try:
+                restored = self.restoreGeometry(QByteArray.fromHex(blob.encode("ascii")))
+            except Exception as exc:
+                trace_exception("ui.main_window", exc)
+                restored = False
+        if not restored:
+            self._center_on_screen()
+        if settings.get("window_maximized") and not self.isMaximized():
+            self.showMaximized()
+        self._trace("geometry_restored", restored=restored)
+
+    def _save_geometry(self) -> None:
+        try:
+            blob = bytes(self.saveGeometry().toHex()).decode("ascii")
+            update_ui_settings(window_geometry=blob,
+                               window_maximized=bool(self.isMaximized()))
+        except Exception as exc:
+            trace_exception("ui.main_window", exc)
 
     def start_pipeline(self) -> None:
         selected_model = self.diagnostics.model_selector.currentText()
@@ -606,20 +644,25 @@ class JarvisMainWindow(QMainWindow):
     def _on_state_changed(self, state: str) -> None:
         self._trace("state_changed", state=state)
         self.app_bar.set_state(state)
-        self.orb_stage.set_state(state)
+        self.empty_state.set_state(state)
 
     def _on_new_message(self, role: str, text: str) -> None:
         self._trace("message_rendered", role=role, text_chars=len(str(text or "")))
         self.chat.add_message(role, text)
-        self._sync_orb_stage()
+        self._sync_conversation_state()
 
-    def _sync_orb_stage(self) -> None:
-        """Hero orb on an empty conversation, compact once there is one."""
+    def _sync_conversation_state(self) -> None:
+        """Swap between the empty state and the transcript.
+
+        No animated morph any more: the orb lives in the app bar, so nothing
+        has to grow or shrink and the column just swaps which child takes the
+        vertical slack.
+        """
         has_conversation = not self.chat.is_empty()
-        self.orb_stage.set_compact(has_conversation)
+        self.empty_state.set_active(not has_conversation)
 
-        # Empty: spacers take the slack and the orb sits centred. Otherwise
-        # the conversation takes it and the orb sits at the top.
+        # Empty: spacers take the slack and the greeting sits centred.
+        # Otherwise the conversation takes it and fills the column.
         self._column_layout.setStretch(self._spacer_top, 0 if has_conversation else 1)
         self._column_layout.setStretch(self._chat_index, 1 if has_conversation else 0)
         self._column_layout.setStretch(self._spacer_bottom, 0 if has_conversation else 1)
@@ -925,7 +968,7 @@ class JarvisMainWindow(QMainWindow):
 
         self._trace("camera_analyze_requested")
         self.chat.add_message("user", "Analyze camera snapshot")
-        self._sync_orb_stage()
+        self._sync_conversation_state()
 
         def worker() -> None:
             started = time.perf_counter()
@@ -974,7 +1017,7 @@ class JarvisMainWindow(QMainWindow):
         if attached_path is not None:
             prompt = text or "Describe this image in detail."
             self.chat.add_message("user", prompt)
-            self._sync_orb_stage()
+            self._sync_conversation_state()
             self._clear_attached_image(keep_last_preview=True)
 
             def worker() -> None:
@@ -1786,6 +1829,9 @@ class JarvisMainWindow(QMainWindow):
         self.close()
 
     def closeEvent(self, event) -> None:
+        # Saved before the prompt: whichever branch is taken -- background,
+        # exit, or cancel -- this is the geometry the user last had.
+        self._save_geometry()
         if self.tray.isVisible():
             choice = self._prompt_close_behavior()
             if choice == "cancel":
@@ -1849,6 +1895,7 @@ class JarvisMainWindow(QMainWindow):
                     acrylic=self._chrome.acrylic_active,
                     rounded=self._chrome.supports_rounded_corners,
                 )
+                self._restore_geometry()
             else:
                 # No chrome means no blur, so undo the translucency: a
                 # translucent window with nothing blurring behind it just
@@ -1856,6 +1903,7 @@ class JarvisMainWindow(QMainWindow):
                 self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, False)
                 self.root.set_backdrop_alpha(255)
                 self._trace("chrome_unavailable")
+                self._restore_geometry()
         except Exception as exc:
             trace_exception("ui.main_window", exc)
 

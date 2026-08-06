@@ -66,6 +66,12 @@ _STATE_TARGETS: dict[str, dict[str, float]] = {
 
 _QUALITY_STEPS = (1.0, 0.78, 0.58, 0.42)
 
+#: filaments, samples, rings, ticks-per-ring when the orb is a small mark.
+_COMPACT_GEOMETRY = (8, 36, 1, 18)
+
+#: at or below this widget size the orb switches to _COMPACT_GEOMETRY.
+COMPACT_SIZE_THRESHOLD = 72
+
 
 class Ripple:
     __slots__ = ("radius", "life", "outbound")
@@ -111,6 +117,7 @@ class OrbWidget(QWidget):
         self._identity = np.eye(3)
 
         self._quality_index = 0
+        self._compact = False
         self._geometry_key: tuple | None = None
         self._filaments = None
         self._ring_angles = np.zeros(0)
@@ -149,6 +156,24 @@ class OrbWidget(QWidget):
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
         self._bloom_cache.clear()
+        self.set_compact(min(self.width(), self.height()) <= COMPACT_SIZE_THRESHOLD)
+
+    def set_compact(self, compact: bool) -> None:
+        """Switch to the simplified geometry used when the orb is a mark.
+
+        Driven by size in resizeEvent, but exposed so a caller can force it.
+        """
+        compact = bool(compact)
+        if compact == self._compact:
+            return
+        self._compact = compact
+        self._geometry_key = None
+        self._bloom_cache.clear()
+        self.update()
+
+    @property
+    def compact(self) -> bool:
+        return self._compact
 
     # -- external inputs --------------------------------------------------
 
@@ -172,11 +197,20 @@ class OrbWidget(QWidget):
 
     def _ensure_geometry(self) -> None:
         profile = theme().orb
-        quality = _QUALITY_STEPS[self._quality_index]
-        filament_count = max(6, int(round(profile.filaments * quality)))
-        samples = max(20, int(round(profile.points * quality)))
-        tick_count = max(12, int(round(profile.ticks_per_ring * quality)))
-        key = (filament_count, samples, profile.rings, tick_count)
+        if self._compact:
+            # 20-26 filaments over 72 samples through three ticked rings is a
+            # weave you cannot resolve at 28px -- it renders as a grey smudge
+            # and burns the frame budget doing it. A single ring and a handful
+            # of filaments still read as the same object, just simplified.
+            filament_count, samples, rings, tick_count = _COMPACT_GEOMETRY
+            quality = 0.0
+        else:
+            quality = _QUALITY_STEPS[self._quality_index]
+            filament_count = max(6, int(round(profile.filaments * quality)))
+            samples = max(20, int(round(profile.points * quality)))
+            tick_count = max(12, int(round(profile.ticks_per_ring * quality)))
+            rings = int(profile.rings)
+        key = (filament_count, samples, rings, tick_count, self._compact)
 
         if key == self._geometry_key:
             return
@@ -187,7 +221,6 @@ class OrbWidget(QWidget):
         # Phases and rolls must stay the same length as the ring count: the
         # per-ring direction array in _advance is built from their size, and
         # a mismatch would broadcast wrongly rather than raise.
-        rings = int(profile.rings)
         if self._ring_phases.size != rings or self._ring_rolls.size != rings:
             self._ring_phases = np.zeros(rings, dtype=np.float64)
             # Stagger the starting precession so the rings never align.
@@ -205,9 +238,10 @@ class OrbWidget(QWidget):
             "geometry_rebuilt",
             filaments=filament_count,
             samples=samples,
-            rings=int(profile.rings),
+            rings=rings,
             ticks=tick_count,
             quality=quality,
+            compact=self._compact,
         )
 
     # -- animation --------------------------------------------------------
