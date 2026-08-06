@@ -12,6 +12,11 @@ from PyQt6.QtCore import QObject, pyqtSignal
 from PyQt6.QtWidgets import QWidget
 
 
+def apply_dark_titlebar(widget, dark: bool = True) -> bool:
+    """No-op. Non-Windows window managers own their own decoration."""
+    return False
+
+
 class WindowChrome(QObject):
     backdrop_alpha_changed = pyqtSignal(int)
 

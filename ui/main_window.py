@@ -40,6 +40,7 @@ from core.compute_runtime import estimate_query_complexity
 from core.config import APP_ICON_PATH
 from core.pipeline import JarvisPipeline
 from core.session_logging import trace_event, trace_exception
+from ui import anim_clock
 from ui.native import WindowChrome
 from ui.system_tray import JarvisSystemTray
 from ui.ui_settings import load_ui_settings, update_ui_settings
@@ -343,6 +344,7 @@ class JarvisMainWindow(QMainWindow):
         self._long_task_hint_timer.timeout.connect(self._on_long_task_hint_timeout)
         self._refresh_attachment_actions()
         self._sync_conversation_state()
+        self.apply_animation_quality()
         self._trace(
             "initialized",
             width=self.width(),
@@ -510,6 +512,26 @@ class JarvisMainWindow(QMainWindow):
         x = geo.x() + (geo.width() - self.width()) // 2
         y = geo.y() + (geo.height() - self.height()) // 2
         self.move(x, y)
+
+    # -- animation quality -------------------------------------------------
+
+    #: ui_settings animation_quality -> shared clock interval, in ms.
+    _ANIMATION_INTERVALS = {"auto": 16, "high": 16, "balanced": 33, "minimal": 33}
+
+    def apply_animation_quality(self, quality: str | None = None) -> None:
+        """Consume ui_settings["animation_quality"].
+
+        Defined and validated since the previous overhaul with nothing reading
+        it. "minimal" swaps the live orb for the static brand mark rather than
+        freezing it -- a motionless orb reads as a hung app, not as a setting.
+        """
+        value = str(quality or load_ui_settings().get("animation_quality", "auto"))
+        value = value.strip().lower()
+        if value not in self._ANIMATION_INTERVALS:
+            value = "auto"
+        anim_clock.clock().set_interval(self._ANIMATION_INTERVALS[value])
+        self.app_bar.set_static_mark(value == "minimal")
+        self._trace("animation_quality_applied", quality=value)
 
     # -- geometry persistence ---------------------------------------------
 
@@ -1283,6 +1305,13 @@ class JarvisMainWindow(QMainWindow):
         self._trace("close_logs_dialog")
 
     def _open_settings(self) -> None:
+        """Open the settings window.
+
+        The 350-line inline dialog that used to live here is now
+        ui/dialogs/settings.py: a rail plus pages instead of one flat column,
+        and it finally exposes the Appearance controls that existed in code
+        but were unreachable from the running app.
+        """
         if not self.pipeline:
             self._trace("open_settings_skipped", reason="pipeline_not_ready")
             QMessageBox.information(
@@ -1293,457 +1322,14 @@ class JarvisMainWindow(QMainWindow):
             return
 
         self._trace("open_settings_dialog")
+        from ui.dialogs.settings import SettingsWindow
 
-        dialog = QDialog(self)
-        dialog.setWindowTitle(f"{self._assistant_name} Settings")
-        dialog.setModal(True)
-        dialog.resize(560, 460)
-
-        outer_layout = QVBoxLayout(dialog)
-        outer_layout.setContentsMargins(16, 16, 16, 16)
-        outer_layout.setSpacing(10)
-
-        scroll_area = QScrollArea(dialog)
-        scroll_area.setWidgetResizable(True)
-        scroll_area.setFrameShape(QFrame.Shape.NoFrame)
-        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        outer_layout.addWidget(scroll_area, 1)
-
-        settings_content = QWidget(scroll_area)
-        scroll_area.setWidget(settings_content)
-
-        layout = QVBoxLayout(settings_content)
-        layout.setContentsMargins(4, 4, 8, 4)
-        layout.setSpacing(10)
-
-        wake_cfg = self.pipeline.get_wakeword_settings()
-        wake_checkbox = QCheckBox("Enable passive wake-word listener", dialog)
-        wake_checkbox.setChecked(bool(wake_cfg.get("enabled", False)))
-
-        tts_cfg = self.pipeline.get_tts_settings()
-        tts_checkbox = QCheckBox("Speak responses aloud (TTS)", dialog)
-        tts_checkbox.setChecked(bool(tts_cfg.get("enabled", True)))
-
-        tts_profile_combo = QComboBox(dialog)
-        tts_profile_combo.addItem("FRIDAY", "female")
-        tts_profile_combo.addItem("JARVIS", "male")
-        tts_profile_idx = tts_profile_combo.findData(str(tts_cfg.get("profile", "female")))
-        if tts_profile_idx >= 0:
-            tts_profile_combo.setCurrentIndex(tts_profile_idx)
-
-        profile_description = QLabel(dialog)
-        profile_description.setWordWrap(True)
-        profile_description.setFont(mono_font())
-
-        def refresh_profile_description() -> None:
-            selected = str(tts_profile_combo.currentData() or "female")
-            if selected == "female":
-                profile_description.setText("FRIDAY: Female Replacement Intelligent Digital Assistant Youth")
-            else:
-                profile_description.setText("JARVIS: Just A Really Very Intelligent System")
-
-        refresh_profile_description()
-        tts_profile_combo.currentIndexChanged.connect(lambda _=0: refresh_profile_description())
-
-        response_cfg = self.pipeline.get_response_settings()
-        response_mode_combo = QComboBox(dialog)
-        response_mode_combo.addItem("Brief (fast)", "brief")
-        response_mode_combo.addItem("Normal (balanced)", "normal")
-        response_mode_combo.addItem("Detailed (longer)", "detailed")
-        response_mode_idx = response_mode_combo.findData(str(response_cfg.get("verbosity", "normal")))
-        if response_mode_idx >= 0:
-            response_mode_combo.setCurrentIndex(response_mode_idx)
-
-        verified_web_checkbox = QCheckBox("Enable verified real-time web mode", dialog)
-        verified_web_checkbox.setChecked(self.pipeline.is_realtime_web_enabled())
-
-        compute_cfg = self.pipeline.get_compute_settings()
-        compute_mode_combo = QComboBox(dialog)
-        compute_mode_combo.addItem(f"Let {self._assistant_name} decide (dynamic)", "auto")
-        compute_mode_combo.addItem("CPU only", "cpu")
-        compute_mode_combo.addItem("GPU preferred", "gpu")
-
-        current_compute_mode = str(compute_cfg.get("mode", "auto"))
-        idx = compute_mode_combo.findData(current_compute_mode)
-        if idx >= 0:
-            compute_mode_combo.setCurrentIndex(idx)
-
-        compute_caps = dict(compute_cfg.get("capabilities") or {})
-        if compute_caps:
-            gpu_supported = bool(compute_caps.get("gpu_supported", False))
-            llm_gpu_supported = bool(compute_caps.get("llm_gpu_offload_supported", False))
-            stt_cuda_ready = bool(compute_caps.get("stt_cuda_ready", False))
-            stt_cuda_reason = str(compute_caps.get("stt_cuda_reason") or "")
-            gpu_name = str(compute_caps.get("gpu_name") or "Not detected")
-            providers = compute_caps.get("onnx_providers") or []
-            providers_text = ", ".join(str(item) for item in providers) if providers else "None detected"
-            stt_status_text = "Yes" if stt_cuda_ready else "No (Mic STT will use CPU)"
-            stt_reason_line = f"\nSTT CUDA reason: {stt_cuda_reason}" if (stt_cuda_reason and not stt_cuda_ready) else ""
-            compute_text = (
-                f"Detected GPU: {gpu_name}\n"
-                f"ONNX providers: {providers_text}\n"
-                f"General GPU acceleration available: {'Yes' if gpu_supported else 'No (CPU fallback will be used)'}\n"
-                f"LLM GPU offload available: {'Yes' if llm_gpu_supported else 'No (LLM will run on CPU)'}\n"
-                f"STT CUDA runtime ready: {stt_status_text}"
-                f"{stt_reason_line}"
-            )
-        else:
-            compute_text = (
-                "Compute capability scan is running in the background.\n"
-                "Reopen settings in a moment to see full GPU/STT capability details."
-            )
-
-        compute_status = QLabel(compute_text, dialog)
-        compute_status.setWordWrap(True)
-        compute_status.setFont(mono_font())
-
-        wake_sensitivity_input = QDoubleSpinBox(dialog)
-        wake_sensitivity_input.setRange(0.10, 0.95)
-        wake_sensitivity_input.setSingleStep(0.01)
-        wake_sensitivity_input.setDecimals(2)
-        wake_sensitivity_input.setValue(float(wake_cfg.get("sensitivity", 0.35)))
-
-        wake_phrases_list = QListWidget(dialog)
-        wake_phrases_list.setSelectionMode(QListWidget.SelectionMode.ExtendedSelection)
-        wake_phrases_list.setMinimumHeight(110)
-        for phrase in wake_cfg.get("activation_phrases", []):
-            phrase_text = str(phrase).strip().lower()
-            if phrase_text:
-                wake_phrases_list.addItem(phrase_text)
-
-        wake_phrase_input = QLineEdit(dialog)
-        wake_phrase_input.setPlaceholderText("Type a wake phrase and click Add")
-
-        wake_phrase_add_btn = QPushButton("Add Phrase", dialog)
-        wake_phrase_remove_btn = QPushButton("Remove Selected", dialog)
-
-        strict_phrase_checkbox = QCheckBox("Require phrase prefix in transcript", dialog)
-        strict_phrase_checkbox.setChecked(bool(wake_cfg.get("strict_phrase_prefix", False)))
-
-        auto_restart_checkbox = QCheckBox("Auto-resume wake listener after assistant response", dialog)
-        auto_restart_checkbox.setChecked(bool(wake_cfg.get("auto_restart_after_response", True)))
-
-        follow_up_checkbox = QCheckBox("Listen for follow-up query after each wake response", dialog)
-        follow_up_checkbox.setChecked(bool(wake_cfg.get("follow_up_after_response", True)))
-
-        follow_up_timeout_input = QSpinBox(dialog)
-        follow_up_timeout_input.setRange(3, 20)
-        follow_up_timeout_input.setValue(int(wake_cfg.get("follow_up_timeout", 8)))
-
-        follow_up_turns_input = QSpinBox(dialog)
-        follow_up_turns_input.setRange(0, 3)
-        follow_up_turns_input.setValue(int(wake_cfg.get("max_followup_turns", 1)))
-
-        wake_restore_btn = QPushButton("Restore Wakeword Defaults", dialog)
-
-        def add_wake_phrase() -> None:
-            phrase_text = str(wake_phrase_input.text() or "").strip().lower()
-            if not phrase_text:
-                return
-            existing = {wake_phrases_list.item(i).text().strip().lower() for i in range(wake_phrases_list.count())}
-            if phrase_text in existing:
-                wake_phrase_input.clear()
-                return
-            wake_phrases_list.addItem(phrase_text)
-            wake_phrase_input.clear()
-
-        def remove_selected_wake_phrases() -> None:
-            for item in wake_phrases_list.selectedItems():
-                wake_phrases_list.takeItem(wake_phrases_list.row(item))
-
-        def restore_wake_defaults() -> None:
-            defaults = dict(DEFAULT_WAKEWORD_CONFIG)
-            wake_sensitivity_input.setValue(float(defaults.get("sensitivity", 0.35)))
-            wake_phrases_list.clear()
-            for phrase in defaults.get("activation_phrases", ["jarvis", "hey jarvis"]):
-                phrase_text = str(phrase).strip().lower()
-                if phrase_text:
-                    wake_phrases_list.addItem(phrase_text)
-            strict_phrase_checkbox.setChecked(bool(defaults.get("strict_phrase_prefix", False)))
-            auto_restart_checkbox.setChecked(bool(defaults.get("auto_restart_after_response", True)))
-            follow_up_checkbox.setChecked(bool(defaults.get("follow_up_after_response", True)))
-            follow_up_timeout_input.setValue(int(defaults.get("follow_up_timeout", 8)))
-            follow_up_turns_input.setValue(int(defaults.get("max_followup_turns", 1)))
-
-        wake_phrase_add_btn.clicked.connect(add_wake_phrase)
-        wake_phrase_input.returnPressed.connect(add_wake_phrase)
-        wake_phrase_remove_btn.clicked.connect(remove_selected_wake_phrases)
-        wake_restore_btn.clicked.connect(restore_wake_defaults)
-
-        wake_phrase_add_row = QHBoxLayout()
-        wake_phrase_add_row.setSpacing(8)
-        wake_phrase_add_row.addWidget(wake_phrase_input, 1)
-        wake_phrase_add_row.addWidget(wake_phrase_add_btn)
-
-        wake_phrase_actions_row = QHBoxLayout()
-        wake_phrase_actions_row.setSpacing(8)
-        wake_phrase_actions_row.addWidget(wake_phrase_remove_btn)
-        wake_phrase_actions_row.addWidget(wake_restore_btn)
-
-        wake_config_path = QLabel(f"Wakeword config path: {WAKEWORD_CONFIG_PATH}", dialog)
-        wake_config_path.setWordWrap(True)
-        wake_config_path.setFont(mono_font())
-
-        llm_ready = bool(
-            self.pipeline.router
-            and self.pipeline.router.llm is not None
-            and self.pipeline.router.llm.is_ready()
-        )
-        stt_status = self.pipeline.get_stt_status()
-        stt_available = bool(stt_status.get("available", False))
-        stt_initialized = bool(stt_status.get("initialized", False))
-        stt_reason = str(stt_status.get("reason", "") or "")
-
-        wake_status = self.pipeline.get_wakeword_status()
-        wake_enabled = bool(wake_status.get("enabled", False))
-        wake_ready = bool(wake_status.get("available", False))
-        wake_initializing = bool(wake_status.get("initializing", False))
-        wake_reason = str(wake_status.get("reason", "") or "")
-
-        if stt_available and stt_initialized:
-            stt_text = "Ready"
-        elif stt_available:
-            stt_text = "Ready (lazy init)"
-        else:
-            stt_text = "Unavailable"
-
-        if wake_enabled and wake_ready:
-            wake_text = "Available"
-        elif wake_enabled and wake_initializing:
-            wake_text = "Starting in background"
-        elif wake_enabled:
-            wake_text = "Unavailable"
-        else:
-            wake_text = "Disabled"
-
-        status = QLabel(
-            f"Local LLM: {'Ready' if llm_ready else 'Will initialize on demand'}\n"
-            f"Microphone STT: {stt_text}\n"
-            f"Wake word: {wake_text}"
-            f"{(f'\nSTT note: {stt_reason}' if (stt_reason and not stt_initialized) else '')}",
-            dialog,
-        )
-        if wake_enabled and not wake_ready and wake_reason:
-            status.setText(status.text() + f"\nWake note: {wake_reason}")
-        status.setWordWrap(True)
-        status.setFont(mono_font())
-
-        app_status = QLabel("App index: status available via Rescan Apps", dialog)
-        app_status.setWordWrap(True)
-        app_status.setFont(mono_font())
-
-        music_status = QLabel("Music index: status available via Rescan Music", dialog)
-        music_status.setWordWrap(True)
-        music_status.setFont(mono_font())
-
-        rescan_apps_btn = QPushButton("Rescan Apps", dialog)
-        rescan_music_btn = QPushButton("Rescan Music", dialog)
-
-        def rescan_apps() -> None:
-            self._trace("settings_rescan_apps_requested")
-            app_status.setText("App index: rescanning...")
-
-            def worker() -> None:
-                try:
-                    from actions import app_control
-
-                    result = app_control.rescan_app_index()
-                    message = str(result.get("response_text", "App index scan completed."))
-                except Exception as exc:
-                    message = f"App index scan failed: {exc}"
-                    trace_exception("ui.main_window", exc, event="settings_rescan_apps_failed")
-                self._trace("settings_rescan_apps_completed", message=message)
-                self.log_requested.emit(message)
-                QTimer.singleShot(0, lambda: app_status.setText(f"App index: {message}"))
-
-            threading.Thread(target=worker, daemon=True).start()
-
-        def rescan_music() -> None:
-            self._trace("settings_rescan_music_requested")
-            music_status.setText("Music index: rescanning...")
-
-            def worker() -> None:
-                try:
-                    from actions import media_control
-
-                    result = media_control.rescan_media_index()
-                    message = str(result.get("response_text", "Music index scan completed."))
-                except Exception as exc:
-                    message = f"Music index scan failed: {exc}"
-                    trace_exception("ui.main_window", exc, event="settings_rescan_music_failed")
-                self._trace("settings_rescan_music_completed", message=message)
-                self.log_requested.emit(message)
-                QTimer.singleShot(0, lambda: music_status.setText(f"Music index: {message}"))
-
-            threading.Thread(target=worker, daemon=True).start()
-
-        rescan_apps_btn.clicked.connect(rescan_apps)
-        rescan_music_btn.clicked.connect(rescan_music)
-
-        rescan_row = QHBoxLayout()
-        rescan_row.setSpacing(8)
-        rescan_row.addWidget(rescan_apps_btn)
-        rescan_row.addWidget(rescan_music_btn)
-
-        layout.addWidget(wake_checkbox)
-        layout.addWidget(tts_checkbox)
-        layout.addWidget(QLabel("Voice profile", dialog))
-        layout.addWidget(tts_profile_combo)
-        layout.addWidget(profile_description)
-        layout.addWidget(QLabel("Response verbosity", dialog))
-        layout.addWidget(response_mode_combo)
-        layout.addWidget(verified_web_checkbox)
-        layout.addWidget(QLabel("Compute backend mode", dialog))
-        layout.addWidget(compute_mode_combo)
-        layout.addWidget(compute_status)
-        layout.addWidget(QLabel("Wakeword sensitivity", dialog))
-        layout.addWidget(wake_sensitivity_input)
-        layout.addWidget(QLabel("Wakeword phrases", dialog))
-        layout.addWidget(wake_phrases_list)
-        layout.addLayout(wake_phrase_add_row)
-        layout.addLayout(wake_phrase_actions_row)
-        layout.addWidget(strict_phrase_checkbox)
-        layout.addWidget(auto_restart_checkbox)
-        layout.addWidget(follow_up_checkbox)
-        layout.addWidget(QLabel("Follow-up timeout (seconds)", dialog))
-        layout.addWidget(follow_up_timeout_input)
-        layout.addWidget(QLabel("Max follow-up turns", dialog))
-        layout.addWidget(follow_up_turns_input)
-        layout.addWidget(wake_config_path)
-        layout.addWidget(status)
-        layout.addWidget(app_status)
-        layout.addWidget(music_status)
-        layout.addLayout(rescan_row)
-        layout.addStretch(1)
-
-        buttons = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel,
-            dialog,
-        )
-        buttons.accepted.connect(dialog.accept)
-        buttons.rejected.connect(dialog.reject)
-        outer_layout.addWidget(buttons)
-
+        window = SettingsWindow(self, self)
+        result = window.exec()
         self._trace(
-            "settings_dialog_ready",
-            wake_enabled=bool(wake_cfg.get("enabled", False)),
-            tts_enabled=bool(tts_cfg.get("enabled", True)),
-            tts_profile=str(tts_cfg.get("profile", "female")),
-            response_verbosity=str(response_cfg.get("verbosity", "normal")),
-            compute_mode=current_compute_mode,
-            realtime_web_enabled=bool(self.pipeline.is_realtime_web_enabled()),
+            "settings_dialog_closed",
+            accepted=result == QDialog.DialogCode.Accepted,
         )
-
-        if dialog.exec() != QDialog.DialogCode.Accepted:
-            self._trace("settings_dialog_cancelled")
-            return
-
-        self.pipeline.set_tts_enabled(tts_checkbox.isChecked())
-        selected_profile = str(tts_profile_combo.currentData() or "female")
-        self.pipeline.set_tts_profile(selected_profile)
-        self._refresh_assistant_branding()
-        selected_verbosity = str(response_mode_combo.currentData() or "normal")
-        self.pipeline.set_response_verbosity(selected_verbosity)
-        self.pipeline.set_realtime_web_enabled(verified_web_checkbox.isChecked())
-        self._set_verified_web_controls(self.pipeline.is_realtime_web_enabled())
-        self._trace(
-            "settings_apply_runtime",
-            tts_enabled=bool(tts_checkbox.isChecked()),
-            tts_profile=selected_profile,
-            response_verbosity=selected_verbosity,
-            realtime_web_enabled=bool(verified_web_checkbox.isChecked()),
-        )
-        self._append_log(f"TTS profile set to {selected_profile}.")
-        self._append_log(f"Response verbosity set to {selected_verbosity}.")
-
-        selected_compute_mode = str(compute_mode_combo.currentData() or "auto")
-        updated_compute = self.pipeline.set_compute_mode(selected_compute_mode)
-        active_compute_mode = str(updated_compute.get("mode", selected_compute_mode))
-        active_caps = dict(updated_compute.get("capabilities") or {})
-        gpu_active_available = bool(active_caps.get("gpu_supported", False))
-        llm_gpu_active_available = bool(active_caps.get("llm_gpu_offload_supported", False))
-        if active_caps:
-            self._append_log(
-                f"Compute mode set to {active_compute_mode.upper()}"
-                f" ({'GPU acceleration available' if gpu_active_available else 'CPU fallback active'}; "
-                f"{'LLM GPU enabled' if llm_gpu_active_available else 'LLM CPU fallback'})."
-            )
-        else:
-            self._append_log(
-                f"Compute mode set to {active_compute_mode.upper()} (capability refresh in progress)."
-            )
-        self._trace(
-            "settings_apply_compute",
-            selected_compute_mode=selected_compute_mode,
-            active_compute_mode=active_compute_mode,
-            gpu_supported=gpu_active_available,
-            llm_gpu_supported=llm_gpu_active_available,
-            has_capabilities=bool(active_caps),
-        )
-
-        if active_caps and active_compute_mode == "gpu" and not gpu_active_available:
-            QMessageBox.information(
-                self,
-                f"{self._assistant_name} Settings",
-                "GPU mode was selected, but no compatible GPU runtime is currently available."
-                f" {self._assistant_name} will continue with CPU fallback until GPU dependencies are available.",
-            )
-        elif active_caps and active_compute_mode == "gpu" and not llm_gpu_active_available:
-            QMessageBox.information(
-                self,
-                f"{self._assistant_name} Settings",
-                "GPU mode is enabled for supported components, but your local LLM runtime "
-                "(LiteRT-LM) does not currently support GPU offload in this environment. "
-                "LLM responses will run on CPU until a Vulkan-compatible GPU driver is available.",
-            )
-
-        sensitivity = float(wake_sensitivity_input.value())
-
-        phrases = [wake_phrases_list.item(i).text().strip().lower() for i in range(wake_phrases_list.count())]
-        phrases = [item for item in phrases if item]
-        if not phrases:
-            phrases = list(DEFAULT_WAKEWORD_CONFIG.get("activation_phrases", ["jarvis", "hey jarvis"]))
-        strict_phrase = strict_phrase_checkbox.isChecked()
-        auto_restart_after_response = auto_restart_checkbox.isChecked()
-        follow_up_after_response = follow_up_checkbox.isChecked()
-
-        follow_up_timeout = int(follow_up_timeout_input.value())
-        max_followup_turns = int(follow_up_turns_input.value())
-
-        wake_enabled = wake_checkbox.isChecked()
-
-        self._append_log("Wakeword settings saved through structured controls.")
-
-        self.pipeline.update_wakeword_settings(
-            enabled=wake_enabled,
-            sensitivity=sensitivity,
-            activation_phrases=phrases,
-            strict_phrase_prefix=strict_phrase,
-            auto_restart_after_response=auto_restart_after_response,
-            follow_up_after_response=follow_up_after_response,
-            follow_up_timeout=follow_up_timeout,
-            max_followup_turns=max_followup_turns,
-        )
-        self._trace(
-            "settings_apply_wakeword",
-            enabled=bool(wake_enabled),
-            sensitivity=float(sensitivity),
-            activation_phrases=list(phrases),
-            strict_phrase_prefix=bool(strict_phrase),
-            auto_restart_after_response=bool(auto_restart_after_response),
-            follow_up_after_response=bool(follow_up_after_response),
-            follow_up_timeout=int(follow_up_timeout),
-            max_followup_turns=int(max_followup_turns),
-        )
-
-        if wake_enabled:
-            self.enable_wake_word()
-        else:
-            self.disable_wake_word()
-
-        self._set_verified_web_controls(self.pipeline.is_realtime_web_enabled())
-        self._trace("settings_apply_complete")
-
     def enable_wake_word(self) -> None:
         if not self.pipeline:
             self._trace("enable_wake_skipped", reason="pipeline_none")

@@ -233,6 +233,35 @@ def _transparency_enabled() -> bool:
         return True
 
 
+def apply_dark_titlebar(widget, dark: bool = True) -> bool:
+    """Darken a native-framed window's OS title bar.
+
+    Dialogs keep their system frame -- they are not worth the frameless
+    machinery, and an opaque QDialog under an acrylic parent would defeat the
+    blur anyway. Without this they get a light grey Windows caption sitting on
+    top of a dark window, which is the single most dated thing on screen.
+
+    Attribute 20 is the correct one on this build; 19 is only valid on
+    17763-18362 and returns E_INVALIDARG here.
+    """
+    try:
+        hwnd = int(widget.winId())
+    except Exception:
+        return False
+    if not hwnd:
+        return False
+    ok = _dwm_set_attr(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, 1 if dark else 0)
+    if ok and _has(_user32, "SetWindowPos"):
+        # The caption is not repainted until the frame is invalidated, so
+        # without this the window stays light until it is moved.
+        try:
+            SWP = 0x0002 | 0x0001 | 0x0004 | 0x0020
+            _user32.SetWindowPos(wintypes.HWND(hwnd), None, 0, 0, 0, 0, SWP)
+        except Exception:
+            pass
+    return ok
+
+
 class WindowChrome(QObject):
     """Frameless chrome + acrylic backdrop for one top-level window."""
 

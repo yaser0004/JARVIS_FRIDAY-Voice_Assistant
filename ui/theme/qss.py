@@ -870,5 +870,87 @@ QDialogButtonBox QPushButton {{
     min-width: 88px;
 }}
 
+/* ------------------------------------------------------------ settings */
+
+QListWidget#settingsRail {{
+    background: {css(c.surface)};
+    border: none;
+    padding: 10px 8px;
+    outline: 0;
+}}
+
+QListWidget#settingsRail::item {{
+    padding: 8px 12px;
+    border-radius: {m.radius_md}px;
+    color: {css(c.text_dim)};
+}}
+
+QListWidget#settingsRail::item:hover {{
+    background: {hover};
+    color: {css(c.text)};
+}}
+
+/* The selected page is the one place on this window the accent is spent. */
+QListWidget#settingsRail::item:selected {{
+    background: {css(with_alpha(c.accent, 46))};
+    color: {css(c.text)};
+}}
+
+QLabel#pageTitle {{
+    color: {css(c.text)};
+    background: transparent;
+}}
+
+QFrame#settingsCard {{
+    background: {css(c.surface)};
+    border: {m.border_w}px solid {css(c.border)};
+    border-radius: {m.radius_lg}px;
+}}
+
+QFrame#settingRow {{
+    background: transparent;
+    border: none;
+}}
+
+QFrame#rowDivider {{
+    background: {css(c.border)};
+    border: none;
+}}
+
+QLabel#rowTitle {{
+    color: {css(c.text)};
+    background: transparent;
+}}
+
+QLabel#rowDescription {{
+    color: {css(c.text_dim)};
+    background: transparent;
+}}
+
+QWidget#settingsFooter {{
+    background: {css(c.surface)};
+    border-top: {m.border_w}px solid {css(c.border)};
+}}
+
+QFrame#banner {{
+    background: {css(with_alpha(c.warn, 34))};
+    border: {m.border_w}px solid {css(with_alpha(c.warn, 90))};
+    border-radius: {m.radius_md}px;
+}}
+
+QFrame#banner[tone="error"] {{
+    background: {css(with_alpha(c.danger, 34))};
+    border: {m.border_w}px solid {css(with_alpha(c.danger, 90))};
+}}
+
+QFrame#banner QLabel {{
+    background: transparent;
+    color: {css(c.text)};
+}}
+
+QFrame#accentSwatch {{
+    border: {m.border_w}px solid {css(c.border_strong)};
+}}
+
 {_indicator_rules(theme, urls)}
 """.strip()

@@ -12,8 +12,8 @@ nobody needs.
 import sys
 
 if sys.platform == "win32":
-    from ui.native.win_chrome import WindowChrome
+    from ui.native.win_chrome import WindowChrome, apply_dark_titlebar
 else:
-    from ui.native.null_chrome import WindowChrome
+    from ui.native.null_chrome import WindowChrome, apply_dark_titlebar
 
-__all__ = ["WindowChrome"]
+__all__ = ["WindowChrome", "apply_dark_titlebar"]
