@@ -41,6 +41,10 @@ from core.config import APP_ICON_PATH
 from core.pipeline import JarvisPipeline
 from core.session_logging import trace_event, trace_exception
 from ui.system_tray import JarvisSystemTray
+from ui.widgets.app_bar import AppBar
+from ui.widgets.composer import Composer
+from ui.widgets.diagnostics_panel import DiagnosticsPanel
+from ui.widgets.orb_stage import OrbStage
 from ui.icons import app_icon, icon
 from ui.theme import (
     body_font,
@@ -52,11 +56,15 @@ from ui.theme import (
 )
 from ui.widgets.chat_widget import ChatWidget
 from ui.widgets.orb import OrbWidget
-from ui.widgets.sidebar import Sidebar
 from ui.widgets.waveform_widget import WaveformWidget
 from speech.wakeword_config import DEFAULT_WAKEWORD_CONFIG, WAKEWORD_CONFIG_PATH
 from vision.screen_capture import ScreenCapture
 from vision.webcam import WebcamCapture
+
+
+# Comfortable measure for the conversation column and the composer, so text
+# does not run the full width of a maximised window.
+CONTENT_WIDTH = 760
 
 
 class RoundedContainer(QWidget):
@@ -120,55 +128,78 @@ class JarvisMainWindow(QMainWindow):
         self.setCentralWidget(self.root)
 
         self.outer_layout = QVBoxLayout(self.root)
-        self.outer_layout.setContentsMargins(12, 12, 12, 12)
-        self.outer_layout.setSpacing(8)
+        self.outer_layout.setContentsMargins(1, 1, 1, 1)
+        self.outer_layout.setSpacing(0)
 
-        content = QHBoxLayout()
-        content.setSpacing(12)
-        self.outer_layout.addLayout(content, 1)
+        self.app_bar = AppBar(self.root)
+        self.outer_layout.addWidget(self.app_bar)
 
-        self.sidebar = Sidebar(self.root)
-        content.addWidget(self.sidebar, 0)
+        # Body: the conversation column, plus the diagnostics panel which is
+        # collapsed to zero width until it is asked for.
+        body = QHBoxLayout()
+        body.setContentsMargins(0, 0, 0, 0)
+        body.setSpacing(0)
+        self.outer_layout.addLayout(body, 1)
 
-        center_panel = QWidget(self.root)
-        center_layout = QVBoxLayout(center_panel)
-        center_layout.setContentsMargins(10, 6, 10, 6)
-        center_layout.setSpacing(10)
+        column = QWidget(self.root)
+        column_layout = QVBoxLayout(column)
+        column_layout.setContentsMargins(20, 10, 20, 16)
+        column_layout.setSpacing(10)
+        body.addWidget(column, 1)
 
-        self.orb = OrbWidget(center_panel)
-        center_layout.addWidget(self.orb, alignment=Qt.AlignmentFlag.AlignHCenter)
+        self.diagnostics = DiagnosticsPanel(self.root)
+        body.addWidget(self.diagnostics, 0)
 
-        self.llm_status_label = QLabel("", center_panel)
-        self.llm_status_label.setFont(mono_font())
-        self.llm_status_label.setAlignment(Qt.AlignmentFlag.AlignHCenter)
-        self.llm_status_label.setWordWrap(True)
-        self.llm_status_label.setStyleSheet("color: rgba(180, 220, 255, 220);")
-        self._last_persistent_llm_status = ""
-        self.llm_status_label.setVisible(False)
-        center_layout.addWidget(self.llm_status_label, alignment=Qt.AlignmentFlag.AlignHCenter)
+        # The orb is the hero on an empty conversation and scales down to a
+        # live presence once there is something to read.
+        # Spacers around the orb let the empty state centre it vertically and
+        # the conversation state pin it to the top, without two layouts.
+        column_layout.addStretch(1)
+        self._spacer_top = column_layout.count() - 1
 
-        self.processing_hint_label = QLabel("", center_panel)
-        self.processing_hint_label.setFont(mono_font())
+        self.orb_stage = OrbStage(column)
+        self.orb = self.orb_stage.orb
+        self.waveform = self.orb_stage.waves
+        column_layout.addWidget(self.orb_stage)
+
+        self.chat = ChatWidget(column)
+        column_layout.addWidget(self.chat, 0)
+        self._chat_index = column_layout.count() - 1
+
+        column_layout.addStretch(1)
+        self._spacer_bottom = column_layout.count() - 1
+        self._column_layout = column_layout
+
+        self.processing_hint_label = QLabel("", column)
+        self.processing_hint_label.setObjectName("caption")
+        self.processing_hint_label.setFont(mono_font(9))
         self.processing_hint_label.setAlignment(Qt.AlignmentFlag.AlignHCenter)
         self.processing_hint_label.setWordWrap(True)
-        self.processing_hint_label.setStyleSheet("color: rgba(255, 190, 140, 220);")
         self.processing_hint_label.setVisible(False)
-        center_layout.addWidget(self.processing_hint_label, alignment=Qt.AlignmentFlag.AlignHCenter)
+        column_layout.addWidget(self.processing_hint_label)
 
-        self.waveform = WaveformWidget(center_panel)
-        center_layout.addWidget(self.waveform)
+        self.composer = Composer(column)
+        composer_row = QHBoxLayout()
+        composer_row.setContentsMargins(0, 0, 0, 0)
+        composer_row.addStretch(1)
+        composer_row.addWidget(self.composer, 0)
+        composer_row.addStretch(1)
+        self.composer.setMaximumWidth(CONTENT_WIDTH)
+        self.composer.setMinimumWidth(360)
+        column_layout.addLayout(composer_row)
 
-        self.plus_btn = QToolButton(center_panel)
-        self.plus_btn.setToolTip("Attach image or toggle extras")
-        self.plus_btn.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
-        self.plus_btn.setFixedWidth(38)
+        # The composer owns these, but the names are part of the QA harness
+        # contract and several handlers reach for them directly.
+        self.input_box = self.composer.input_box
+        self.send_btn = self.composer.send_btn
+        self.mic_btn = self.composer.mic_btn
+        self.plus_btn = self.composer.plus_btn
+        self.web_toggle_btn = self.composer.web_toggle_btn
 
-        self.web_toggle_btn = QToolButton(center_panel)
-        self.web_toggle_btn.setObjectName("webToggleButton")
-        self.web_toggle_btn.setToolTip("Web overview: OFF")
-        self.web_toggle_btn.setCheckable(True)
-        self.web_toggle_btn.setFixedWidth(38)
-        self.web_toggle_btn.setEnabled(False)
+        self.composer.submitted.connect(self._submit_text)
+        self.send_btn.clicked.connect(self._on_send_or_stop_clicked)
+        self.mic_btn.pressed.connect(self._start_hold_to_talk)
+        self.mic_btn.released.connect(self._stop_hold_to_talk)
         self.web_toggle_btn.toggled.connect(self._on_verified_web_toggled)
 
         self.plus_menu = QMenu(self.plus_btn)
@@ -198,23 +229,25 @@ class JarvisMainWindow(QMainWindow):
         self.plus_menu.addAction(self.remove_attached_action)
 
         self.plus_btn.setMenu(self.plus_menu)
-        self.plus_btn.setEnabled(False)
 
-        self.attachment_bar = QFrame(center_panel)
+        # Attachment chip, hosted inside the composer surface.
+        self.attachment_bar = QFrame(self.composer)
+        self.attachment_bar.setObjectName("attachmentChip")
         attachment_layout = QHBoxLayout(self.attachment_bar)
-        attachment_layout.setContentsMargins(8, 6, 8, 6)
+        attachment_layout.setContentsMargins(6, 4, 6, 4)
         attachment_layout.setSpacing(8)
 
         self.attachment_thumb = QLabel(self.attachment_bar)
-        self.attachment_thumb.setFixedSize(54, 54)
+        self.attachment_thumb.setFixedSize(38, 38)
         self.attachment_thumb.setScaledContents(False)
-        self.attachment_thumb.setToolTip("Click to preview last image")
+        self.attachment_thumb.setToolTip("Click to preview")
         self.attachment_thumb.mousePressEvent = self._on_attachment_thumb_clicked
         attachment_layout.addWidget(self.attachment_thumb)
 
         self.attachment_label = QLabel("No image attached", self.attachment_bar)
-        self.attachment_label.setWordWrap(True)
-        self.attachment_label.setFont(mono_font())
+        self.attachment_label.setObjectName("caption")
+        self.attachment_label.setWordWrap(False)
+        self.attachment_label.setFont(mono_font(9))
         attachment_layout.addWidget(self.attachment_label, 1)
 
         self.attachment_remove_btn = QToolButton(self.attachment_bar)
@@ -223,72 +256,17 @@ class JarvisMainWindow(QMainWindow):
         self.attachment_remove_btn.clicked.connect(self._remove_attached_image)
         attachment_layout.addWidget(self.attachment_remove_btn)
         self.attachment_bar.setVisible(False)
-        center_layout.addWidget(self.attachment_bar)
-
-        input_row = QHBoxLayout()
-
-        self.input_box = QLineEdit(center_panel)
-        self.input_box.setPlaceholderText("Ask JARVIS anything...")
-        self.input_box.returnPressed.connect(self._submit_text)
-        self.input_box.setEnabled(False)
-
-        self.send_btn = QPushButton("", center_panel)
-        self.send_btn.setToolTip("Send")
-        self.send_btn.setFixedWidth(42)
-        self.send_btn.setFont(body_font())
-        self.send_btn.clicked.connect(self._on_send_or_stop_clicked)
-        self.send_btn.setEnabled(False)
-
-        self.inline_attachment_icon = QLabel(center_panel)
-        self.inline_attachment_icon.setFixedSize(22, 22)
-        self.inline_attachment_icon.setVisible(False)
-        self.inline_attachment_icon.setToolTip("Attached image")
-
-        self.mic_btn = QPushButton("", center_panel)
-        self.mic_btn.setToolTip("Hold to talk")
-        self.mic_btn.setFixedWidth(42)
-        self.mic_btn.setFont(body_font())
-        self.mic_btn.pressed.connect(self._start_hold_to_talk)
-        self.mic_btn.released.connect(self._stop_hold_to_talk)
-        self.mic_btn.setEnabled(False)
-
-        input_row.addWidget(self.plus_btn)
-        input_row.addWidget(self.web_toggle_btn)
-        input_row.addWidget(self.input_box, 1)
-        input_row.addWidget(self.inline_attachment_icon)
-        input_row.addWidget(self.send_btn)
-        input_row.addWidget(self.mic_btn)
-        center_layout.addLayout(input_row)
-
-        content.addWidget(center_panel, 1)
-
-        right_panel = QWidget(self.root)
-        right_panel.setMinimumWidth(250)
-        right_panel.setMaximumWidth(540)
-        right_panel.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Expanding)
-        right_layout = QVBoxLayout(right_panel)
-        right_layout.setContentsMargins(4, 6, 4, 6)
-        right_layout.setSpacing(8)
-
-        chat_title = QLabel("Conversation", right_panel)
-        chat_title.setFont(mono_font())
-        right_layout.addWidget(chat_title)
-
-        self.chat = ChatWidget(right_panel)
-        right_layout.addWidget(self.chat, 1)
-
-        content.addWidget(right_panel, 0)
-        content.setStretch(0, 2)
-        content.setStretch(1, 6)
-        content.setStretch(2, 3)
+        self.composer.set_attachment_widget(self.attachment_bar)
+        self.composer.attachment_slot.setVisible(False)
 
         self.tray = JarvisSystemTray(self, APP_ICON_PATH, self)
         self.tray.show()
         self._refresh_assistant_branding()
 
-        self.sidebar.settings_btn.clicked.connect(self._open_settings)
-        self.sidebar.logs_btn.clicked.connect(self._open_logs)
-        self.sidebar.model_selector.currentTextChanged.connect(self._on_intent_model_changed)
+        self.app_bar.settings_requested.connect(self._open_settings)
+        self.app_bar.logs_requested.connect(self._open_logs)
+        self.app_bar.diagnostics_toggled.connect(self.diagnostics.set_open)
+        self.diagnostics.model_selector.currentTextChanged.connect(self._on_intent_model_changed)
         self._apply_icons()
         theme_manager().changed.connect(self._on_theme_changed)
         self.log_requested.connect(self._append_log)
@@ -300,6 +278,7 @@ class JarvisMainWindow(QMainWindow):
         self._long_task_hint_timer.setSingleShot(True)
         self._long_task_hint_timer.timeout.connect(self._on_long_task_hint_timeout)
         self._refresh_attachment_actions()
+        self._sync_orb_stage()
         self._trace(
             "initialized",
             width=self.width(),
@@ -344,7 +323,8 @@ class JarvisMainWindow(QMainWindow):
         has to be regenerated in the new accent.
         """
         self._apply_icons()
-        for widget in (self.root, self.orb, self.waveform, self.chat, self.sidebar):
+        for widget in (self.root, self.app_bar, self.orb_stage, self.orb,
+                       self.waveform, self.chat, self.diagnostics):
             if widget is not None:
                 widget.update()
         for row in getattr(self.chat, "_items", []):
@@ -381,9 +361,10 @@ class JarvisMainWindow(QMainWindow):
         set_persona(self._assistant_name)
         expansion = self._assistant_expansion(self._assistant_name)
         self.setWindowTitle(f"{self._assistant_name} - {expansion}")
-        self.input_box.setPlaceholderText(f"Ask {self._assistant_name} anything...")
+        self.composer.set_placeholder(f"Ask {self._assistant_name} anything")
         self.chat.set_assistant_name(self._assistant_name)
-        self.sidebar.set_brand_name(self._assistant_name)
+        self.app_bar.set_brand_name(self._assistant_name)
+        self.orb_stage.set_greeting(self._greeting_text())
         self.tray.set_assistant_name(self._assistant_name)
 
     def _start_long_task_hint_timer(self, delay_ms: int = 2400, hint_text: str = "Processing, this may take a while...") -> None:
@@ -460,7 +441,7 @@ class JarvisMainWindow(QMainWindow):
         self.move(x, y)
 
     def start_pipeline(self) -> None:
-        selected_model = self.sidebar.model_selector.currentText()
+        selected_model = self.diagnostics.model_selector.currentText()
         self._trace("pipeline_start_requested", intent_model=selected_model)
         self.pipeline = JarvisPipeline()
         self.pipeline.set_intent_model(selected_model)
@@ -557,66 +538,44 @@ class JarvisMainWindow(QMainWindow):
 
     def _on_state_changed(self, state: str) -> None:
         self._trace("state_changed", state=state)
-        self.sidebar.set_state(state)
-        self.orb.set_state(state)
-        self.waveform.set_state(state)
+        self.app_bar.set_state(state)
+        self.orb_stage.set_state(state)
 
     def _on_new_message(self, role: str, text: str) -> None:
         self._trace("message_rendered", role=role, text_chars=len(str(text or "")))
         self.chat.add_message(role, text)
+        self._sync_orb_stage()
+
+    def _sync_orb_stage(self) -> None:
+        """Hero orb on an empty conversation, compact once there is one."""
+        has_conversation = not self.chat.is_empty()
+        self.orb_stage.set_compact(has_conversation)
+
+        # Empty: spacers take the slack and the orb sits centred. Otherwise
+        # the conversation takes it and the orb sits at the top.
+        self._column_layout.setStretch(self._spacer_top, 0 if has_conversation else 1)
+        self._column_layout.setStretch(self._chat_index, 1 if has_conversation else 0)
+        self._column_layout.setStretch(self._spacer_bottom, 0 if has_conversation else 1)
+        self.chat.setVisible(has_conversation)
+
+    @staticmethod
+    def _greeting_text() -> str:
+        hour = datetime.now().hour
+        if hour < 12:
+            return "Good morning"
+        if hour < 18:
+            return "Good afternoon"
+        return "Good evening"
 
     def _on_intent(self, intent: str, confidence: float) -> None:
         self._trace("intent_classified", intent=intent, confidence=float(confidence))
-        self.sidebar.add_intent(intent, confidence)
+        self.diagnostics.add_intent(intent, confidence)
 
     def _on_intent_diagnostics(self, diagnostics: dict) -> None:
         try:
-            self.sidebar.set_intent_diagnostics(diagnostics)
+            self.diagnostics.set_intent_diagnostics(diagnostics)
         except Exception:
             pass
-
-    def _refresh_llm_status(self) -> None:
-        if self.pipeline is None:
-            self.llm_status_label.setText("LLM: waiting for pipeline")
-            self._last_persistent_llm_status = "LLM: waiting for pipeline"
-            return
-
-        status = self.pipeline.get_llm_status()
-        state = str(status.get("state", "initializing") or "initializing").lower()
-        mode = str(status.get("mode", "-") or "-")
-        message = str(status.get("message", "") or "")
-        suffix = f" [{mode}]" if mode and mode != "-" else ""
-
-        # Keep orb-adjacent status stable and only surface high-signal runtime info.
-        if state in {"error", "unavailable"}:
-            text = f"LLM: {state}{suffix}"
-            if message:
-                text = f"{text} - {message}"
-            self._last_persistent_llm_status = text
-            self.llm_status_label.setStyleSheet("color: rgba(255, 170, 150, 230);")
-            self.llm_status_label.setText(text)
-            return
-
-        if state == "initializing":
-            text = f"LLM: initializing{suffix}"
-            if text != self._last_persistent_llm_status:
-                self._last_persistent_llm_status = text
-                self.llm_status_label.setStyleSheet("color: rgba(180, 220, 255, 220);")
-                self.llm_status_label.setText(text)
-            return
-
-        if state == "ready":
-            text = f"LLM: ready{suffix}"
-            if text != self._last_persistent_llm_status:
-                self._last_persistent_llm_status = text
-                self.llm_status_label.setStyleSheet("color: rgba(180, 220, 255, 220);")
-                self.llm_status_label.setText(text)
-            return
-
-        # Ignore transient states such as "processing" so random messages do not flicker below the orb.
-        if self.llm_status_label.text() != self._last_persistent_llm_status:
-            self.llm_status_label.setStyleSheet("color: rgba(180, 220, 255, 220);")
-            self.llm_status_label.setText(self._last_persistent_llm_status)
 
     def _on_intent_model_changed(self, model_name: str) -> None:
         if self.pipeline is not None:
@@ -722,8 +681,6 @@ class JarvisMainWindow(QMainWindow):
         pixmap = QPixmap(str(image_path))
         if pixmap.isNull():
             self.attachment_thumb.clear()
-            self.inline_attachment_icon.clear()
-            self.inline_attachment_icon.setVisible(False)
         else:
             scaled = pixmap.scaled(54, 54, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
             self.attachment_thumb.setPixmap(scaled)
@@ -733,8 +690,6 @@ class JarvisMainWindow(QMainWindow):
                 Qt.AspectRatioMode.KeepAspectRatio,
                 Qt.TransformationMode.SmoothTransformation,
             )
-            self.inline_attachment_icon.setPixmap(inline_scaled)
-            self.inline_attachment_icon.setVisible(True)
 
         source_text = {
             "drive": "drive image",
@@ -745,7 +700,7 @@ class JarvisMainWindow(QMainWindow):
         self.attachment_label.setText(
             f"Attached {source_text}: {image_path.name}\nType your question and press Send."
         )
-        self.attachment_bar.setVisible(True)
+        self._set_attachment_visible(True)
         self._refresh_attachment_actions()
         self._trace("attach_image_ready", path=str(image_path), source=source)
         self._append_log(f"Image attached ({source_text}): {image_path}")
@@ -767,10 +722,8 @@ class JarvisMainWindow(QMainWindow):
             self._last_image_path = current_path
             self._last_image_source = current_source
         self.attachment_thumb.clear()
-        self.inline_attachment_icon.clear()
-        self.inline_attachment_icon.setVisible(False)
         self.attachment_label.setText("No image attached")
-        self.attachment_bar.setVisible(False)
+        self._set_attachment_visible(False)
         self._refresh_attachment_actions()
 
     def _remove_attached_image(self) -> None:
@@ -834,6 +787,11 @@ class JarvisMainWindow(QMainWindow):
 
         dialog.exec()
         self._trace("preview_image_closed", path=str(image_path))
+
+    def _set_attachment_visible(self, visible: bool) -> None:
+        """The chip lives inside the composer, so both must move together."""
+        self.attachment_bar.setVisible(bool(visible))
+        self.composer.attachment_slot.setVisible(bool(visible))
 
     def _refresh_attachment_actions(self) -> None:
         has_attached = self._attached_image_path is not None
@@ -900,6 +858,7 @@ class JarvisMainWindow(QMainWindow):
 
         self._trace("camera_analyze_requested")
         self.chat.add_message("user", "Analyze camera snapshot")
+        self._sync_orb_stage()
 
         def worker() -> None:
             started = time.perf_counter()
@@ -948,6 +907,7 @@ class JarvisMainWindow(QMainWindow):
         if attached_path is not None:
             prompt = text or "Describe this image in detail."
             self.chat.add_message("user", prompt)
+            self._sync_orb_stage()
             self._clear_attached_image(keep_last_preview=True)
 
             def worker() -> None:

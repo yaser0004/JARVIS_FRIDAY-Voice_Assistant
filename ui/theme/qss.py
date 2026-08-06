@@ -650,6 +650,175 @@ QSplitter::handle:vertical {{
     height: 1px;
 }}
 
+/* ------------------------------------------------------------ app bar */
+
+QWidget#appBar {{
+    background: transparent;
+    border-bottom: {m.border_w}px solid {css(c.border, 30)};
+}}
+
+QLabel#brand {{
+    color: {css(c.text)};
+}}
+
+QToolButton#barButton {{
+    background: transparent;
+    border: none;
+    border-radius: {m.radius_sm}px;
+}}
+
+QToolButton#barButton:hover {{
+    background: {hover};
+}}
+
+QToolButton#barButton:checked {{
+    background: {css(with_alpha(c.accent, 46))};
+}}
+
+/* ------------------------------------------------------------ orb area */
+
+QLabel#greeting {{
+    color: {css(c.text)};
+    background: transparent;
+}}
+
+QLabel#statePill {{
+    color: {css(c.text_faint)};
+    background: transparent;
+}}
+
+/* ------------------------------------------------------ conversation */
+
+QWidget#chatContainer {{
+    background: transparent;
+}}
+
+QFrame#userTurn {{
+    background: {css(with_alpha(mix(c.surface_alt, c.accent, 0.14), 226))};
+    border: {m.border_w}px solid {css(with_alpha(c.accent, 40))};
+    border-radius: {m.radius_lg}px;
+}}
+
+QFrame#assistantTurn {{
+    background: transparent;
+    border: none;
+}}
+
+QLabel#turnRole {{
+    color: {css(c.accent_dim)};
+    background: transparent;
+}}
+
+QLabel#turnText {{
+    color: {css(c.text)};
+    background: transparent;
+    line-height: 150%;
+}}
+
+QLabel#turnIntent {{
+    color: {css(c.text_faint)};
+    background: transparent;
+}}
+
+QLabel#turnImage {{
+    background: transparent;
+    border: {m.border_w}px solid {css(c.border)};
+    border-radius: {m.radius_md}px;
+    padding: 3px;
+}}
+
+/* --------------------------------------------------------- composer */
+
+QFrame#composer {{
+    background: {css(c.surface_alt)};
+    border: {m.border_w}px solid {css(c.border)};
+    border-radius: {m.radius_lg + 6}px;
+}}
+
+QFrame#composer:focus-within {{
+    border: {m.border_w}px solid {css(c.border_strong)};
+}}
+
+QLineEdit#composerInput {{
+    background: transparent;
+    border: none;
+    border-radius: 0;
+    padding: 6px 8px;
+    color: {css(c.text)};
+    selection-background-color: {sel_bg};
+}}
+
+QLineEdit#composerInput:focus {{
+    background: transparent;
+    border: none;
+}}
+
+QLineEdit#composerInput:disabled {{
+    background: transparent;
+    border: none;
+    color: {disabled_text};
+}}
+
+QToolButton#composerButton, QPushButton#composerButton {{
+    background: transparent;
+    border: none;
+    border-radius: {m.radius_md}px;
+}}
+
+QToolButton#composerButton:hover, QPushButton#composerButton:hover {{
+    background: {hover};
+}}
+
+QToolButton#composerButton:disabled, QPushButton#composerButton:disabled {{
+    background: transparent;
+}}
+
+QToolButton#composerToggle {{
+    background: transparent;
+    border: none;
+    border-radius: {m.radius_md}px;
+}}
+
+QToolButton#composerToggle:hover {{
+    background: {hover};
+}}
+
+QToolButton#composerToggle:checked {{
+    background: {css(with_alpha(c.accent, 58))};
+}}
+
+QPushButton#composerSend {{
+    background: {css(with_alpha(c.accent, 40))};
+    border: none;
+    border-radius: {m.radius_md}px;
+}}
+
+QPushButton#composerSend:hover {{
+    background: {css(with_alpha(c.accent, 92))};
+}}
+
+QPushButton#composerSend:disabled {{
+    background: {css(with_alpha(c.text_faint, 20))};
+}}
+
+QFrame#attachmentChip {{
+    background: {css(with_alpha(c.accent, 20))};
+    border: {m.border_w}px solid {css(c.border)};
+    border-radius: {m.radius_md}px;
+}}
+
+QLabel#turnImage, QFrame#attachmentChip QLabel {{
+    background: transparent;
+}}
+
+/* ------------------------------------------------------- diagnostics */
+
+QFrame#diagnosticsPanel {{
+    background: {css(c.surface)};
+    border: none;
+    border-left: {m.border_w}px solid {css(c.border, 40)};
+}}
+
 /* ------------------------------------------------------------- dialogs */
 
 QMessageBox {{

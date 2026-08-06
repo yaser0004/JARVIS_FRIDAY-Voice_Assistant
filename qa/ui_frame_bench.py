@@ -85,7 +85,9 @@ def main() -> int:
             "user" if i % 2 == 0 else "assistant",
             f"line {i}: sustained conversation content to populate the transcript",
         )
-    window.sidebar.intent_toggle_btn.setChecked(True)
+    # The old left sidebar is gone; the same diagnostics content now slides out
+    # from the right behind this toggle.
+    window.app_bar.diagnostics_btn.setChecked(True)
     window.show()
     window.orb.set_profiling(True)
 

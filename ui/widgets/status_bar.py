@@ -1,11 +1,23 @@
+"""System load meters.
+
+Previously three raw mono labels reading "CPU: 16% GPU: 0. RAM: 69" in the
+main window, which clipped at the sidebar width. Now labelled meters living
+inside the diagnostics panel, where technical readouts belong.
+"""
+
 from __future__ import annotations
 
 import threading
-import time
 
 import psutil
-from PyQt6.QtCore import QTimer
-from PyQt6.QtWidgets import QHBoxLayout, QLabel, QWidget
+from PyQt6.QtCore import QTimer, Qt
+from PyQt6.QtWidgets import (
+    QHBoxLayout,
+    QLabel,
+    QProgressBar,
+    QVBoxLayout,
+    QWidget,
+)
 
 from ui.theme import mono_font
 
@@ -13,18 +25,14 @@ from ui.theme import mono_font
 class MetricsStatusBar(QWidget):
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
-        self.cpu_label = QLabel("CPU: --%")
-        self.gpu_label = QLabel("GPU: --%")
-        self.ram_label = QLabel("RAM: --%")
 
-        layout = QHBoxLayout(self)
+        layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(16)
+        layout.setSpacing(7)
 
-        for label in [self.cpu_label, self.gpu_label, self.ram_label]:
-            label.setObjectName("readout")
-            label.setFont(mono_font())
-            layout.addWidget(label)
+        self.cpu_label, self.cpu_bar = self._meter(layout, "CPU")
+        self.gpu_label, self.gpu_bar = self._meter(layout, "GPU")
+        self.ram_label, self.ram_bar = self._meter(layout, "RAM")
 
         self._gpu_load_cached = 0.0
         self._gpu_lock = threading.Lock()
@@ -36,6 +44,35 @@ class MetricsStatusBar(QWidget):
         self.timer.timeout.connect(self.refresh)
         self.timer.start(800)
         self.refresh()
+
+    def _meter(self, parent_layout: QVBoxLayout, name: str) -> tuple[QLabel, QProgressBar]:
+        row = QHBoxLayout()
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(8)
+
+        caption = QLabel(name)
+        caption.setObjectName("readout")
+        caption.setFont(mono_font(9, tracking=8.0))
+        caption.setFixedWidth(34)
+
+        bar = QProgressBar()
+        bar.setObjectName("subtle")
+        bar.setRange(0, 100)
+        bar.setValue(0)
+        bar.setTextVisible(False)
+        bar.setFixedHeight(5)
+
+        value = QLabel("--%")
+        value.setObjectName("readout")
+        value.setFont(mono_font(9))
+        value.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        value.setFixedWidth(44)
+
+        row.addWidget(caption)
+        row.addWidget(bar, 1)
+        row.addWidget(value)
+        parent_layout.addLayout(row)
+        return value, bar
 
     def _gpu_probe_loop(self) -> None:
         while not self._gpu_stop.is_set():
@@ -65,9 +102,13 @@ class MetricsStatusBar(QWidget):
         ram = psutil.virtual_memory().percent
         gpu = self._gpu_load()
 
-        self.cpu_label.setText(f"CPU: {cpu:.0f}%")
-        self.gpu_label.setText(f"GPU: {gpu:.1f}%")
-        self.ram_label.setText(f"RAM: {ram:.0f}%")
+        for label, bar, value in (
+            (self.cpu_label, self.cpu_bar, cpu),
+            (self.gpu_label, self.gpu_bar, gpu),
+            (self.ram_label, self.ram_bar, ram),
+        ):
+            label.setText(f"{value:.0f}%")
+            bar.setValue(int(max(0.0, min(100.0, value))))
 
     def closeEvent(self, event) -> None:
         self._gpu_stop.set()
