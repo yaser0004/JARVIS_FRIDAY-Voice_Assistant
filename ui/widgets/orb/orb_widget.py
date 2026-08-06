@@ -24,6 +24,7 @@ import numpy as np
 from PyQt6.QtCore import QElapsedTimer, QPointF, QRectF, Qt
 from PyQt6.QtGui import (
     QColor,
+    QImage,
     QPainter,
     QPen,
     QPixmap,
@@ -79,11 +80,13 @@ class OrbWidget(QWidget):
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
         self.setMinimumSize(300, 300)
-        # The orb paints its own opaque backdrop. Without this the widget is
-        # transparent, so every one of its 60 repaints a second also forces
-        # the parent shell to redraw its antialiased rounded rect across the
-        # entire window, which costs more than the orb itself.
-        self.setAttribute(Qt.WidgetAttribute.WA_OpaquePaintEvent, True)
+        # The orb used to paint an opaque backdrop and declare
+        # WA_OpaquePaintEvent, so its 60 repaints a second would not force the
+        # parent shell to redraw. That is no longer possible: an opaque widget
+        # over the acrylic backdrop punches a solid rectangle through the blur.
+        # It now composites, and the bloom pixmap is baked on transparency
+        # instead of on palette.bg.
+        self.setAttribute(Qt.WidgetAttribute.WA_OpaquePaintEvent, False)
         self.setAutoFillBackground(False)
 
         self._state = "IDLE"
@@ -272,25 +275,34 @@ class OrbWidget(QWidget):
 
     def _backdrop(self, width: int, height: int, bloom_size: int, palette,
                   profile, dpr: float) -> QPixmap:
-        """Opaque background with the outer bloom already composited in.
+        """The outer bloom, baked onto transparency.
 
         The bloom covers essentially the whole widget, so blitting it
         additively every frame was the single most expensive operation in the
-        orb. Baking it into one opaque pixmap turns that into a plain copy.
-        The size is bucketed so the breathing animation still hits the cache.
+        orb. Baking it into one pixmap turns that into a plain copy. The size
+        is bucketed so the breathing animation still hits the cache.
+
+        Filled with transparency rather than palette.bg: an opaque fill would
+        show as a solid rectangle punched through the acrylic backdrop.
+        palette.bg is consequently no longer part of the cache key.
         """
-        key = (width, height, bloom_size, palette.bg.rgba(),
-               profile.bloom.rgba(), round(dpr, 2))
+        key = (width, height, bloom_size, profile.bloom.rgba(), round(dpr, 2))
         hit = self._bloom_cache.get(key)
         if hit is not None:
             return hit
 
-        px = QPixmap(max(1, int(width * dpr)), max(1, int(height * dpr)))
-        px.setDevicePixelRatio(dpr)
-        px.fill(palette.bg)
+        # Via QImage, not QPixmap. A bare QPixmap is created in the screen
+        # format -- RGB32 with no alpha channel on Windows -- so filling it
+        # with Qt.transparent produces solid BLACK, which showed up as a black
+        # rectangle punched through the acrylic. An explicitly premultiplied
+        # ARGB image is the only way to guarantee the alpha survives.
+        image = QImage(max(1, int(width * dpr)), max(1, int(height * dpr)),
+                       QImage.Format.Format_ARGB32_Premultiplied)
+        image.setDevicePixelRatio(dpr)
+        image.fill(Qt.GlobalColor.transparent)
 
         if bloom_size > 4:
-            painter = QPainter(px)
+            painter = QPainter(image)
             painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
             painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_Plus)
             cx, cy = width / 2.0, height / 2.0
@@ -304,6 +316,9 @@ class OrbWidget(QWidget):
             painter.setBrush(gradient)
             painter.drawEllipse(QRectF(cx - half, cy - half, bloom_size, bloom_size))
             painter.end()
+
+        px = QPixmap.fromImage(image)
+        px.setDevicePixelRatio(dpr)
 
         # A handful of buckets is enough; unbounded growth would leak on
         # every resize.

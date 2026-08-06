@@ -102,13 +102,33 @@ class RoundedContainer(QWidget):
         rect = QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5)
 
         active = theme()
-        painter.setBrush(with_alpha(active.palette.bg, self._backdrop_alpha))
-        painter.setPen(QPen(active.palette.border, 1))
         radius = self._corner_radius
+
+        # CompositionMode_Source, not the default SourceOver. The backing
+        # store is not cleared between frames, so blending a translucent fill
+        # composites it on top of the previous frame's copy and the alpha
+        # accumulates towards opaque. Anything that repaints continuously --
+        # the orb, at 60fps -- would punch a progressively solid rectangle
+        # through the acrylic within a handful of frames, while the static
+        # parts of the window stayed correctly translucent. Source replaces
+        # the destination outright, alpha included.
+        painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_Source)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(with_alpha(active.palette.bg, self._backdrop_alpha))
         if radius:
             painter.drawRoundedRect(rect, radius, radius)
         else:
             painter.drawRect(rect)
+
+        painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceOver)
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        painter.setPen(QPen(active.palette.border, 1))
+        if radius:
+            painter.drawRoundedRect(rect, radius, radius)
+        else:
+            painter.drawRect(rect)
+
+        painter.end()
         super().paintEvent(event)
 
 
@@ -366,6 +386,10 @@ class JarvisMainWindow(QMainWindow):
         has to be regenerated in the new accent.
         """
         self._apply_icons()
+        # The acrylic tint is a DWM property, not a painted one, so a repaint
+        # alone would leave the blur carrying the previous theme's colour.
+        if getattr(self, "_chrome", None) is not None and self._chrome.active:
+            self._sync_chrome_tint()
         for widget in (self.root, self.app_bar, self.orb_stage, self.orb,
                        self.waveform, self.chat, self.diagnostics):
             if widget is not None:
@@ -1807,14 +1831,41 @@ class JarvisMainWindow(QMainWindow):
             return
         try:
             self._chrome.set_drag_widget(self.app_bar)
+            # Without this Qt fills the client area opaquely and the acrylic
+            # is invisible. Measured cheap: it changes neither GWL_STYLE nor
+            # GWL_EXSTYLE and notably does not add WS_EX_LAYERED, so there is
+            # no layered-window blit penalty on Qt 6's DWM-composited path.
+            self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+            self._sync_chrome_tint()
             if self._chrome.install():
                 self.app_bar.set_window_controls_visible(True)
                 self.app_bar.set_maximized(self.isMaximized())
-                self._trace("chrome_installed")
+                self.root.set_corner_radius(
+                    theme().metrics.radius_lg
+                    if self._chrome.supports_rounded_corners else 0
+                )
+                self._trace(
+                    "chrome_installed",
+                    acrylic=self._chrome.acrylic_active,
+                    rounded=self._chrome.supports_rounded_corners,
+                )
             else:
+                # No chrome means no blur, so undo the translucency: a
+                # translucent window with nothing blurring behind it just
+                # shows a sharp desktop through the UI.
+                self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, False)
+                self.root.set_backdrop_alpha(255)
                 self._trace("chrome_unavailable")
         except Exception as exc:
             trace_exception("ui.main_window", exc)
+
+    def _sync_chrome_tint(self) -> None:
+        """Push the theme's backdrop colour into the acrylic layer."""
+        active = theme()
+        bg = active.palette.bg
+        self._chrome.set_tint(
+            (bg.red(), bg.green(), bg.blue()), active.metrics.acrylic_alpha
+        )
 
     def changeEvent(self, event) -> None:
         super().changeEvent(event)

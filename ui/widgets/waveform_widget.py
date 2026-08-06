@@ -31,9 +31,11 @@ class WaveformWidget(QWidget):
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
         self.setMinimumHeight(80)
-        # Same reason as the orb: a transparent widget animating at 60 FPS
-        # forces the shell to repaint underneath it on every frame.
-        self.setAttribute(Qt.WidgetAttribute.WA_OpaquePaintEvent, True)
+        # Same reason as the orb: an opaque widget over the acrylic backdrop
+        # punches a solid rectangle through the blur, so it composites now.
+        # The shell repaints underneath it every frame as a result, which is
+        # affordable because RoundedContainer's fill is a single rect.
+        self.setAttribute(Qt.WidgetAttribute.WA_OpaquePaintEvent, False)
 
         self.bars = BARS
         self.heights = np.zeros(self.bars, dtype=np.float32)
@@ -190,7 +192,8 @@ class WaveformWidget(QWidget):
         palette = theme().palette
 
         width, height = self.width(), self.height()
-        painter.fillRect(self.rect(), palette.bg)
+        # No background fill: an opaque rectangle here would punch a hole
+        # through the acrylic backdrop. The parent's backdrop shows through.
         if width <= 2 or height <= 2:
             return
 

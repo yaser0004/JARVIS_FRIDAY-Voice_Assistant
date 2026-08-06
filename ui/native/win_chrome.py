@@ -281,13 +281,42 @@ class WindowChrome(QObject):
         # one we want, and every style change is a SWP_FRAMECHANGED we would
         # have to get right. See the module docstring.
         self.active = True
+
+        # Cosmetic here (the caption is never drawn once WM_NCCALCSIZE is
+        # eaten) but it still colours the thin DWM frame and transient states
+        # like the snap preview and Alt-Tab. 20 is correct on this build; 19
+        # is only valid on 17763-18362.
+        _dwm_set_attr(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, 1)
+
+        # Win11 only. E_INVALIDARG on Windows 10, which is exactly how we
+        # learn that the silhouette has to stay square: the acrylic backdrop
+        # ignores SetWindowRgn, so there is no other way to round it.
+        self.supports_rounded_corners = _dwm_set_attr(
+            hwnd, DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_ROUND)
+
+        # Deepens the shadow that WS_THICKFRAME already gives us. Documented,
+        # and safe to skip on failure.
+        if _has(_dwmapi, "DwmExtendFrameIntoClientArea"):
+            try:
+                margins = MARGINS(1, 1, 1, 1)
+                _dwmapi.DwmExtendFrameIntoClientArea(
+                    wintypes.HWND(hwnd), ctypes.byref(margins))
+            except Exception:
+                pass
+
         self._apply_frame_changed()
+        self.set_acrylic(True)
 
         # Watchdog: if WM_NCCALCSIZE never arrives the frameless transform did
         # not take, and a half-installed chrome is worse than none.
         QTimer.singleShot(1500, self._verify_installed)
 
-        trace_event("ui.chrome", "installed", hwnd=hwnd)
+        trace_event(
+            "ui.chrome", "installed", hwnd=hwnd,
+            acrylic=self.acrylic_active,
+            rounded=self.supports_rounded_corners,
+            drag_mode=self._drag_mode(),
+        )
         return True
 
     def uninstall(self) -> None:
@@ -350,7 +379,51 @@ class WindowChrome(QObject):
             return self._on_nccalcsize(msg)
         if msg.message == WM_NCHITTEST:
             return self._on_nchittest(msg)
+
+        # Windows 10's acrylic makes window dragging stutter badly. It is a
+        # bug in Windows, not in the caller -- the upstream Qt frameless
+        # library closed the same report as "not fixable from my side". Going
+        # fully opaque for the duration of the drag is the one mitigation that
+        # is definitely fast; swapping to ACCENT_ENABLE_BLURBEHIND is not,
+        # since state 3 has its own lag reports. Both messages are passed on
+        # (False) so Qt still processes them normally.
+        if msg.message == WM_ENTERSIZEMOVE:
+            self._moving = True
+            if self.acrylic_active and self._drag_mode() == "solid":
+                self._set_accent_state(ACCENT_DISABLED)
+                self._set_backdrop_alpha(255)
+            return False, 0
+
+        if msg.message == WM_EXITSIZEMOVE:
+            self._moving = False
+            if self.acrylic_active and self._drag_mode() == "solid":
+                self._set_accent_state(ACCENT_ENABLE_ACRYLICBLURBEHIND)
+                self._set_backdrop_alpha(self._tint_alpha)
+            return False, 0
+
+        # Transparency can be switched off in Settings, or by battery saver,
+        # at any time. Re-evaluate rather than keeping a dead translucent
+        # window.
+        if msg.message in (WM_SETTINGCHANGE, WM_DWMCOMPOSITIONCHANGED):
+            QTimer.singleShot(0, self._reevaluate_acrylic)
+            return False, 0
+
         return None
+
+    @staticmethod
+    def _drag_mode() -> str:
+        """`solid` (default) drops the blur while moving; `keep` leaves it on."""
+        return (os.environ.get("JARVIS_ACRYLIC_DRAG_MODE") or "solid").strip().lower()
+
+    def _reevaluate_acrylic(self) -> None:
+        if not self.active:
+            return
+        wanted = _transparency_enabled()
+        if wanted and not self.acrylic_active:
+            self.set_acrylic(True)
+        elif not wanted and self.acrylic_active:
+            trace_event("ui.chrome", "acrylic_lost", reason="transparency turned off")
+            self.set_acrylic(False)
 
     # -- WM_NCHITTEST ------------------------------------------------------
 
@@ -511,8 +584,82 @@ class WindowChrome(QObject):
 
     # -- acrylic -----------------------------------------------------------
 
+    def _accent_abgr(self) -> int:
+        """Tint as 0xAABBGGRR.
+
+        GradientColor is ABGR, not ARGB -- verified by measurement, not by
+        reading a doc: passing 0xCC0000FF produced red-dominant pixels.
+        """
+        r, g, b = self._tint_rgb
+        return ((self._tint_alpha & 0xFF) << 24 | (b & 0xFF) << 16
+                | (g & 0xFF) << 8 | (r & 0xFF))
+
+    def _set_accent_state(self, state: int) -> bool:
+        if not (self._hwnd and _has(_user32, "SetWindowCompositionAttribute")):
+            return False
+        try:
+            policy = ACCENT_POLICY()
+            policy.AccentState = int(state)
+            # Measured 0 against 2 and 0x1E0: all three produced byte-identical
+            # interior and edge pixels for accent state 4 on this build. The
+            # folklore value of 2 is not load-bearing.
+            policy.AccentFlags = 0
+            policy.GradientColor = (
+                self._accent_abgr() if state != ACCENT_DISABLED else 0
+            )
+            policy.AnimationId = 0
+
+            data = WINDOWCOMPOSITIONATTRIBDATA()
+            data.Attribute = WCA_ACCENT_POLICY
+            data.Data = ctypes.pointer(policy)
+            data.SizeOfData = ctypes.sizeof(policy)
+            return bool(_user32.SetWindowCompositionAttribute(
+                wintypes.HWND(self._hwnd), ctypes.byref(data)))
+        except Exception:
+            return False
+
     def set_acrylic(self, enabled: bool) -> bool:
-        return False
+        """Turn the DWM acrylic backdrop on or off.
+
+        The whole SetWindowCompositionAttribute surface is undocumented and
+        reverse-engineered, and Microsoft has changed its behaviour between
+        feature updates, so this is best-effort by construction: any failure
+        leaves an opaque window rather than a broken one.
+        """
+        if not enabled:
+            ok = self._set_accent_state(ACCENT_DISABLED)
+            self.acrylic_active = False
+            self._set_backdrop_alpha(255)
+            return ok
+
+        if not self.active:
+            return False
+        # Reports success while Settings > Personalization > Colors >
+        # Transparency is off, and simply does not blur. There is no return
+        # code for this, so it has to be read directly.
+        if not _transparency_enabled():
+            trace_event("ui.chrome", "acrylic_skipped", reason="EnableTransparency is 0")
+            self.acrylic_active = False
+            self._set_backdrop_alpha(255)
+            return False
+
+        if not self._set_accent_state(ACCENT_ENABLE_ACRYLICBLURBEHIND):
+            trace_event("ui.chrome", "acrylic_failed")
+            self.acrylic_active = False
+            self._set_backdrop_alpha(255)
+            return False
+
+        self.acrylic_active = True
+        self._set_backdrop_alpha(self._tint_alpha)
+        trace_event("ui.chrome", "acrylic_enabled", alpha=self._tint_alpha)
+        return True
+
+    def set_tint(self, rgb: tuple[int, int, int], alpha: int) -> None:
+        self._tint_rgb = (int(rgb[0]) & 0xFF, int(rgb[1]) & 0xFF, int(rgb[2]) & 0xFF)
+        self._tint_alpha = max(0, min(255, int(alpha)))
+        if self.acrylic_active:
+            self._set_accent_state(ACCENT_ENABLE_ACRYLICBLURBEHIND)
+            self._set_backdrop_alpha(self._tint_alpha)
 
     def _set_backdrop_alpha(self, alpha: int) -> None:
         alpha = max(0, min(255, int(alpha)))

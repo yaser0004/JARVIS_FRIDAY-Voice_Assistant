@@ -110,11 +110,17 @@ QWidget:disabled {{
     color: {disabled_text};
 }}
 
-QMainWindow, QDialog {{
-    background: {css(c.bg)};
+/* The main window paints its own backdrop in RoundedContainer, at whatever
+   alpha the native chrome says is safe. An opaque background here would sit
+   under everything and hide the acrylic blur entirely -- this rule is the
+   single most likely reason for "every ctypes call succeeded and the window
+   looks exactly the same". Dialogs are never frameless and stay opaque. */
+QMainWindow {{
+    background: transparent;
 }}
 
 QDialog {{
+    background: {css(c.bg)};
     font-size: {t.size_md}pt;
 }}
 
