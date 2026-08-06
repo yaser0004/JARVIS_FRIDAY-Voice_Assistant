@@ -40,7 +40,9 @@ from core.compute_runtime import estimate_query_complexity
 from core.config import APP_ICON_PATH
 from core.pipeline import JarvisPipeline
 from core.session_logging import trace_event, trace_exception
+from ui.native import WindowChrome
 from ui.system_tray import JarvisSystemTray
+from ui.ui_settings import load_ui_settings
 from ui.widgets.app_bar import AppBar
 from ui.widgets.composer import Composer
 from ui.widgets.diagnostics_panel import DiagnosticsPanel
@@ -53,6 +55,7 @@ from ui.theme import (
     mono_font,
     set_persona,
     theme,
+    with_alpha,
 )
 from ui.widgets.chat_widget import ChatWidget
 from ui.widgets.orb import OrbWidget
@@ -68,15 +71,44 @@ CONTENT_WIDTH = 760
 
 
 class RoundedContainer(QWidget):
+    """The window's backdrop.
+
+    Paints at `_backdrop_alpha` rather than opaque so the DWM acrylic layer
+    can show through. The alpha is pushed in by WindowChrome and stays at 255
+    until blur is confirmed live -- painting 70% transparent with nothing
+    blurring behind it just shows a sharp desktop through the window.
+    """
+
+    def __init__(self, parent=None) -> None:
+        super().__init__(parent)
+        self._backdrop_alpha = 255
+        self._corner_radius = 0
+
+    def set_backdrop_alpha(self, alpha: int) -> None:
+        alpha = max(0, min(255, int(alpha)))
+        if alpha != self._backdrop_alpha:
+            self._backdrop_alpha = alpha
+            self.update()
+
+    def set_corner_radius(self, radius: int) -> None:
+        radius = max(0, int(radius))
+        if radius != self._corner_radius:
+            self._corner_radius = radius
+            self.update()
+
     def paintEvent(self, event) -> None:
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         rect = QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5)
 
         active = theme()
-        painter.setBrush(active.palette.bg)
+        painter.setBrush(with_alpha(active.palette.bg, self._backdrop_alpha))
         painter.setPen(QPen(active.palette.border, 1))
-        painter.drawRoundedRect(rect, active.metrics.radius_lg, active.metrics.radius_lg)
+        radius = self._corner_radius
+        if radius:
+            painter.drawRoundedRect(rect, radius, radius)
+        else:
+            painter.drawRect(rect)
         super().paintEvent(event)
 
 
@@ -113,7 +145,6 @@ class JarvisMainWindow(QMainWindow):
         self._last_image_source = ""
         self._resume_wake_after_hold = False
         self._is_shutting_down = False
-        self._drag_pos = None
         self._assistant_name = "JARVIS"
         self._screen_capture = ScreenCapture()
         self._webcam_capture = WebcamCapture()
@@ -126,6 +157,15 @@ class JarvisMainWindow(QMainWindow):
 
         self.root = RoundedContainer(self)
         self.setCentralWidget(self.root)
+
+        # Native chrome. Constructed here, installed in showEvent -- winId()
+        # is not meaningful until the window is realised. `frameless` is the
+        # master switch so a user with a broken driver can turn the whole
+        # thing off in ui_settings.json.
+        self._chrome_enabled = bool(load_ui_settings().get("frameless", True))
+        self._chrome_installed = False
+        self._chrome = WindowChrome(self, drag_widget=None)
+        self._chrome.backdrop_alpha_changed.connect(self._on_backdrop_alpha_changed)
 
         self.outer_layout = QVBoxLayout(self.root)
         self.outer_layout.setContentsMargins(1, 1, 1, 1)
@@ -1747,10 +1787,46 @@ class JarvisMainWindow(QMainWindow):
         self._shutdown_for_exit()
         event.accept()
 
-    def mouseReleaseEvent(self, event: QMouseEvent) -> None:
-        if self._drag_pos is not None:
-            self._trace("window_drag_end")
-        self._drag_pos = None
+    # -- native window chrome ---------------------------------------------
+
+    def showEvent(self, event) -> None:
+        """Install the chrome on first show.
+
+        winId() is only meaningful once the window is realised, so this cannot
+        move into __init__ -- install() checks for that and refuses.
+        """
+        super().showEvent(event)
+        if self._chrome_installed:
+            return
+        self._chrome_installed = True
+        if not self._chrome_enabled:
+            self._trace("chrome_disabled_by_settings")
+            return
+        try:
+            if self._chrome.install():
+                self._trace("chrome_installed")
+            else:
+                self._trace("chrome_unavailable")
+        except Exception as exc:
+            trace_exception("ui.main_window", exc)
+
+    def nativeEvent(self, eventType, message):
+        """Forward to the chrome, normalising the result.
+
+        PyQt6 6.7 writes the second element through a `qintptr *` with no None
+        check, so returning None -- or chaining to super(), which itself
+        returns (False, None) -- crashes the process with an access violation.
+        Every path here returns an int. Do not "simplify" this.
+        """
+        chrome = getattr(self, "_chrome", None)
+        if chrome is not None:
+            handled = chrome.handle_native_event(eventType, message)
+            if handled is not None:
+                return handled[0], int(handled[1])
+        return False, 0
+
+    def _on_backdrop_alpha_changed(self, alpha: int) -> None:
+        self.root.set_backdrop_alpha(alpha)
 
 
 
