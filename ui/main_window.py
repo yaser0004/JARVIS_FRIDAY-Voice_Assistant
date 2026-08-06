@@ -41,7 +41,7 @@ from core.config import APP_ICON_PATH
 from core.pipeline import JarvisPipeline
 from core.session_logging import trace_event, trace_exception
 from ui import anim_clock
-from ui.native import WindowChrome
+from ui.native import WindowChrome, apply_dark_titlebar
 from ui.system_tray import JarvisSystemTray
 from ui.ui_settings import load_ui_settings, update_ui_settings
 from ui.widgets.app_bar import AppBar
@@ -1459,6 +1459,10 @@ class JarvisMainWindow(QMainWindow):
             return
         self._chrome_installed = True
         if not self._chrome_enabled:
+            # Native frame by choice. Darken its caption so it still belongs
+            # to the app instead of putting a light grey Windows title bar on
+            # top of a dark window.
+            apply_dark_titlebar(self, theme().palette.is_dark)
             self._trace("chrome_disabled_by_settings")
             return
         try:
@@ -1488,6 +1492,7 @@ class JarvisMainWindow(QMainWindow):
                 # shows a sharp desktop through the UI.
                 self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, False)
                 self.root.set_backdrop_alpha(255)
+                apply_dark_titlebar(self, theme().palette.is_dark)
                 self._trace("chrome_unavailable")
                 self._restore_geometry()
         except Exception as exc:

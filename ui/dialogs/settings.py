@@ -188,8 +188,22 @@ class SettingsWindow(QDialog):
         for page in self._pages.values():
             page.finish()
 
-        self.accepted.connect(self._apply)
         self.rejected.connect(self._revert_appearance)
+
+    def accept(self) -> None:
+        """Apply first; only close if it worked.
+
+        Deliberately not connected to the `accepted` signal: that fires after
+        accept() has already returned Accepted, so a setter raising halfway
+        through would close the window on a half-applied state with nothing
+        on screen saying so.
+        """
+        ok, message = self._apply()
+        if not ok:
+            self.banner.show_message(message, "error")
+            return
+        self._appearance_committed = True
+        super().accept()
 
     def showEvent(self, event) -> None:
         super().showEvent(event)
@@ -429,8 +443,10 @@ class SettingsWindow(QDialog):
         if index >= 0:
             self.animation_combo.setCurrentIndex(index)
         self.animation_combo.currentIndexChanged.connect(self._on_animation_quality)
-        card.add_row("Animation", self.animation_combo,
-                     "Minimal replaces the animated mark with a static one.")
+        card.add_row(
+            "Animation", self.animation_combo,
+            "High and Auto animate at 60fps. Balanced halves that. Minimal "
+            "also replaces the animated mark with a static one.")
 
         page.add_section("Window")
         window_card = page.add_card()
@@ -549,9 +565,8 @@ class SettingsWindow(QDialog):
         self.app_index_label.setFont(mono_font(10))
         apps_btn = QPushButton("Rescan apps", self)
         apps_btn.clicked.connect(lambda: self._rescan("apps"))
-        row = card.add_row("Application index", apps_btn,
-                           "Installed programs the assistant can launch by name.")
-        row.set_description(row.description_label.text())
+        card.add_row("Application index", apps_btn,
+                     "Installed programs the assistant can launch by name.")
         card.add(self.app_index_label)
 
         self.music_index_label = QLabel("Rescan to refresh", self)
@@ -619,33 +634,41 @@ class SettingsWindow(QDialog):
 
     # -- apply ------------------------------------------------------------
 
-    def _apply(self) -> None:
+    def _apply(self) -> tuple[bool, str]:
         """Push the buffered pages to the pipeline, in the established order.
 
         Order matters: set_tts_profile also drives branding and therefore the
         persona theme, and set_compute_mode kicks off an async capability
-        rescan whose result the wake-word re-init should not race.
+        rescan the wake-word re-init should not race.
+
+        Returns (ok, message). Each step is named so a failure can say which
+        one broke rather than closing on a half-applied state.
         """
-        self._appearance_committed = True
         pipeline = self._pipeline
         host = self._host
+        step = "starting"
 
         try:
+            step = "speech output"
             pipeline.set_tts_enabled(self.tts_check.isChecked())
             profile = str(self.tts_profile_combo.currentData() or "female")
             pipeline.set_tts_profile(profile)
             host._refresh_assistant_branding()
 
+            step = "response length"
             verbosity = str(self.verbosity_combo.currentData() or "normal")
             pipeline.set_response_verbosity(verbosity)
 
+            step = "verified web mode"
             pipeline.set_realtime_web_enabled(self.verified_web_check.isChecked())
             host._set_verified_web_controls(pipeline.is_realtime_web_enabled())
 
+            step = "compute mode"
             selected_mode = str(self.compute_combo.currentData() or "auto")
             updated = pipeline.set_compute_mode(selected_mode)
             self._report_compute(updated, selected_mode)
 
+            step = "wake word"
             phrases = [self.phrase_list.item(i).text().strip().lower()
                        for i in range(self.phrase_list.count())]
             phrases = [p for p in phrases if p]
@@ -669,14 +692,19 @@ class SettingsWindow(QDialog):
             else:
                 host.disable_wake_word()
 
+            step = "window frame"
             update_ui_settings(frameless=bool(self.frameless_check.isChecked()))
 
-            host._set_verified_web_controls(pipeline.is_realtime_web_enabled())
             trace_event("ui.settings", "applied", tts_profile=profile,
                         verbosity=verbosity, compute_mode=selected_mode,
                         wake_enabled=bool(wake_enabled))
+            return True, ""
         except Exception as exc:
-            trace_exception("ui.settings", exc)
+            trace_exception("ui.settings", exc, step=step)
+            return False, (
+                f"Could not apply {step}: {exc}. Earlier settings were saved; "
+                f"the rest were not."
+            )
 
     def _report_compute(self, updated: dict, requested: str) -> None:
         """GPU warnings go to the log, not into a modal on top of a modal."""

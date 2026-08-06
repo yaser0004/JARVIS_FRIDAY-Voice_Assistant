@@ -45,7 +45,10 @@ def _merge_defaults(data: Dict[str, Any] | None) -> Dict[str, Any]:
 def load_runtime_settings() -> Dict[str, Any]:
     if RUNTIME_SETTINGS_PATH.exists():
         try:
-            with RUNTIME_SETTINGS_PATH.open("r", encoding="utf-8") as f:
+            # utf-8-sig: a BOM from a hand edit in any Windows editor would
+            # otherwise raise, and the fallback below rewrites the file with
+            # defaults -- silently destroying the user's settings.
+            with RUNTIME_SETTINGS_PATH.open("r", encoding="utf-8-sig") as f:
                 payload = json.load(f)
             return _merge_defaults(payload)
         except Exception:

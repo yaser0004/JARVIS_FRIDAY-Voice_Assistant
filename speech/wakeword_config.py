@@ -71,7 +71,10 @@ def _merge_defaults(data: Dict[str, Any] | None) -> Dict[str, Any]:
 def load_wakeword_config() -> Dict[str, Any]:
     if WAKEWORD_CONFIG_PATH.exists():
         try:
-            with WAKEWORD_CONFIG_PATH.open("r", encoding="utf-8") as f:
+            # utf-8-sig: a BOM from a hand edit in any Windows editor would
+            # otherwise raise, and the fallback below rewrites the file with
+            # defaults -- silently destroying the user's wake phrases.
+            with WAKEWORD_CONFIG_PATH.open("r", encoding="utf-8-sig") as f:
                 payload = json.load(f)
             return _merge_defaults(payload)
         except Exception:

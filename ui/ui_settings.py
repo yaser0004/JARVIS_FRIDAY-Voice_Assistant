@@ -13,6 +13,7 @@ import re
 from typing import Any, Dict
 
 from core.config import APPDATA_DIR
+from core.session_logging import trace_exception
 
 
 UI_SETTINGS_PATH = APPDATA_DIR / "ui_settings.json"
@@ -69,11 +70,18 @@ def _merge_defaults(data: Dict[str, Any] | None) -> Dict[str, Any]:
 def load_ui_settings() -> Dict[str, Any]:
     if UI_SETTINGS_PATH.exists():
         try:
-            with UI_SETTINGS_PATH.open("r", encoding="utf-8") as f:
+            # utf-8-sig, not utf-8: this file is the documented escape hatch
+            # for turning the custom window frame off, so people hand-edit it.
+            # Every Windows editor that offers "UTF-8" -- Notepad, PowerShell's
+            # Set-Content -Encoding utf8 -- writes a BOM, and strict utf-8
+            # raises on it. The failure was silent and destructive: the except
+            # below then rewrote the file with defaults, so a single edit in
+            # Notepad wiped every setting permanently. utf-8-sig reads both.
+            with UI_SETTINGS_PATH.open("r", encoding="utf-8-sig") as f:
                 payload = json.load(f)
             return _merge_defaults(payload)
-        except Exception:
-            pass
+        except Exception as exc:
+            trace_exception("ui.settings_file", exc, path=str(UI_SETTINGS_PATH))
 
     defaults = dict(DEFAULT_UI_SETTINGS)
     save_ui_settings(defaults)
