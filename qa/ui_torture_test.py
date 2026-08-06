@@ -300,27 +300,48 @@ class UITortureRunner:
         def _interact() -> None:
             try:
                 for widget in self.app.topLevelWidgets():
-                    if isinstance(widget, QDialog) and widget.windowTitle() == "JARVIS Settings":
-                        seen["dialog_found"] = True
-                        checkboxes = widget.findChildren(QCheckBox)
-                        if checkboxes:
-                            original = checkboxes[0].isChecked()
-                            checkboxes[0].setChecked(not original)
-                            checkboxes[0].setChecked(original)
-                        button_boxes = widget.findChildren(QDialogButtonBox)
-                        if button_boxes:
-                            ok_btn = button_boxes[0].button(QDialogButtonBox.StandardButton.Ok)
-                            if ok_btn is not None:
-                                ok_btn.click()
-                                seen["applied"] = True
-                                return
-                        widget.accept()
-                        seen["applied"] = True
-                        return
+                    # Match on the suffix, not on "JARVIS Settings". The title
+                    # is built from the active persona, so with the FRIDAY
+                    # voice profile the old exact match never fired -- and
+                    # because nothing then closed the modal, exec() blocked
+                    # forever and the whole run hung here.
+                    if not isinstance(widget, QDialog) or not widget.isVisible():
+                        continue
+                    if not widget.windowTitle().strip().lower().endswith("settings"):
+                        continue
+                    seen["dialog_found"] = True
+                    checkboxes = widget.findChildren(QCheckBox)
+                    if checkboxes:
+                        original = checkboxes[0].isChecked()
+                        checkboxes[0].setChecked(not original)
+                        checkboxes[0].setChecked(original)
+                    button_boxes = widget.findChildren(QDialogButtonBox)
+                    if button_boxes:
+                        # Save is the current commit button; Ok was the old one.
+                        commit = (button_boxes[0].button(QDialogButtonBox.StandardButton.Save)
+                                  or button_boxes[0].button(QDialogButtonBox.StandardButton.Ok))
+                        if commit is not None:
+                            commit.click()
+                            seen["applied"] = True
+                            return
+                    widget.accept()
+                    seen["applied"] = True
+                    return
             except Exception as exc:
                 seen["errors"].append(str(exc))
 
+        def _rescue() -> None:
+            """Never let a missed match hang the whole run."""
+            if seen.get("applied"):
+                return
+            for widget in self.app.topLevelWidgets():
+                if isinstance(widget, QDialog) and widget.isVisible():
+                    seen["errors"].append(
+                        f"forced close of {widget.windowTitle()!r} after timeout")
+                    widget.reject()
+
         QTimer.singleShot(250, _interact)
+        QTimer.singleShot(8000, _rescue)
         self.window._open_settings()
 
         ok = bool(seen.get("dialog_found")) and bool(seen.get("applied")) and not seen.get("errors")
@@ -335,13 +356,26 @@ class UITortureRunner:
 
         def _close_logs_dialog() -> None:
             for widget in self.app.topLevelWidgets():
-                if isinstance(widget, QDialog) and widget.windowTitle() == "JARVIS Logs":
+                # Suffix match, not "JARVIS Logs": the title carries the active
+                # persona, so under the FRIDAY voice profile the exact match
+                # never fired and the modal was never closed, hanging the run.
+                if not isinstance(widget, QDialog) or not widget.isVisible():
+                    continue
+                if widget.windowTitle().strip().lower().endswith("logs"):
                     seen["dialog_found"] = True
                     widget.accept()
                     seen["closed"] = True
                     return
 
+        def _rescue() -> None:
+            if seen.get("closed"):
+                return
+            for widget in self.app.topLevelWidgets():
+                if isinstance(widget, QDialog) and widget.isVisible():
+                    widget.reject()
+
         QTimer.singleShot(200, _close_logs_dialog)
+        QTimer.singleShot(8000, _rescue)
         self.window._open_logs()
 
         ok = size_ok and seen["dialog_found"] and seen["closed"]
