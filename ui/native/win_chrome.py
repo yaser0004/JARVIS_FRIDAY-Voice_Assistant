@@ -63,6 +63,12 @@ SM_CXFRAME = 32
 SM_CYFRAME = 33
 SM_CXPADDEDBORDER = 92
 
+# Shell appbar, for the auto-hiding taskbar case.
+ABM_GETSTATE = 0x00000004
+ABM_GETTASKBARPOS = 0x00000005
+ABS_AUTOHIDE = 0x00000001
+ABE_LEFT, ABE_TOP, ABE_RIGHT, ABE_BOTTOM = 0, 1, 2, 3
+
 # DWM window attributes. 20 is correct on 19045; 19 is only valid on builds
 # 17763-18362 and returns E_INVALIDARG here, so do not implement the common
 # "try 20 then fall back to 19" pattern in the other order.
@@ -119,6 +125,17 @@ class MARGINS(ctypes.Structure):
                 ("cyTopHeight", ctypes.c_int), ("cyBottomHeight", ctypes.c_int)]
 
 
+class APPBARDATA(ctypes.Structure):
+    _fields_ = [
+        ("cbSize", wintypes.DWORD),
+        ("hWnd", wintypes.HWND),
+        ("uCallbackMessage", ctypes.c_uint),
+        ("uEdge", ctypes.c_uint),
+        ("rc", wintypes.RECT),
+        ("lParam", wintypes.LPARAM),
+    ]
+
+
 # ---------------------------------------------------------------------------
 # library loading -- every call site tolerates these being None
 # ---------------------------------------------------------------------------
@@ -131,10 +148,46 @@ try:
     _dwmapi = ctypes.WinDLL("dwmapi", use_last_error=True)
 except OSError:                                             # pragma: no cover
     _dwmapi = None
+try:
+    _shell32 = ctypes.WinDLL("shell32", use_last_error=True)
+except OSError:                                             # pragma: no cover
+    _shell32 = None
 
 
 def _has(lib, name: str) -> bool:
     return lib is not None and hasattr(lib, name)
+
+
+def _declare() -> None:
+    """Pin argument and return types.
+
+    ctypes defaults every return to c_int, which silently truncates the
+    pointer-width returns on x64 -- SHAppBarMessage returns UINT_PTR and
+    SetWindowLongPtr-family calls return LONG_PTR.
+    """
+    if _user32 is not None:
+        if hasattr(_user32, "IsZoomed"):
+            _user32.IsZoomed.argtypes = [wintypes.HWND]
+            _user32.IsZoomed.restype = wintypes.BOOL
+        if hasattr(_user32, "GetWindowRect"):
+            _user32.GetWindowRect.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.RECT)]
+            _user32.GetWindowRect.restype = wintypes.BOOL
+        if hasattr(_user32, "GetDpiForWindow"):
+            _user32.GetDpiForWindow.argtypes = [wintypes.HWND]
+            _user32.GetDpiForWindow.restype = wintypes.UINT
+        if hasattr(_user32, "GetSystemMetricsForDpi"):
+            _user32.GetSystemMetricsForDpi.argtypes = [ctypes.c_int, wintypes.UINT]
+            _user32.GetSystemMetricsForDpi.restype = ctypes.c_int
+        if hasattr(_user32, "SetWindowCompositionAttribute"):
+            _user32.SetWindowCompositionAttribute.argtypes = [
+                wintypes.HWND, ctypes.POINTER(WINDOWCOMPOSITIONATTRIBDATA)]
+            _user32.SetWindowCompositionAttribute.restype = wintypes.BOOL
+    if _shell32 is not None and hasattr(_shell32, "SHAppBarMessage"):
+        _shell32.SHAppBarMessage.argtypes = [wintypes.DWORD, ctypes.POINTER(APPBARDATA)]
+        _shell32.SHAppBarMessage.restype = ctypes.c_size_t   # UINT_PTR
+
+
+_declare()
 
 
 def _dwm_set_attr(hwnd: int, attr: int, value: int) -> bool:
@@ -292,10 +345,85 @@ class WindowChrome(QObject):
             return False, 0
 
     def _dispatch(self, msg: MSG) -> Optional[tuple[bool, _MSG_RESULT]]:
-        """Stage 3 is observe-only; the handlers land in the next stages."""
         if msg.message == WM_NCCALCSIZE:
             self._nccalcsize_seen += 1
+            return self._on_nccalcsize(msg)
         return None
+
+    # -- WM_NCCALCSIZE -----------------------------------------------------
+
+    def _on_nccalcsize(self, msg: MSG) -> tuple[bool, _MSG_RESULT]:
+        """Eat the non-client area so the client fills the whole window.
+
+        This one message is what makes the window frameless. Because
+        WS_THICKFRAME and WS_CAPTION are still set, DefWindowProc keeps giving
+        us snap, edge resize, the shadow and double-click-to-maximize.
+
+        The maximized case is the trap. Measured on this machine, a maximized
+        window's rect is (-8, -8, 1928, 1048) against a work area of
+        (0, 0, 1920, 1040): it overflows by exactly the frame width on all four
+        edges, which clips content and covers the taskbar. AdjustWindowRectExForDpi
+        is the wrong tool here -- it yields 7 and leaves a 2px overhang. The
+        frame + padded-border metrics land on rcWork exactly.
+        """
+        if not msg.wParam:
+            return True, 0
+
+        params = ctypes.cast(msg.lParam, ctypes.POINTER(NCCALCSIZE_PARAMS)).contents
+
+        if _has(_user32, "IsZoomed") and _user32.IsZoomed(wintypes.HWND(msg.hWnd)):
+            dpi = self._dpi()
+            if _has(_user32, "GetSystemMetricsForDpi"):
+                cx = (int(_user32.GetSystemMetricsForDpi(SM_CXFRAME, dpi))
+                      + int(_user32.GetSystemMetricsForDpi(SM_CXPADDEDBORDER, dpi)))
+                cy = (int(_user32.GetSystemMetricsForDpi(SM_CYFRAME, dpi))
+                      + int(_user32.GetSystemMetricsForDpi(SM_CXPADDEDBORDER, dpi)))
+            else:
+                cx = int(_user32.GetSystemMetrics(SM_CXFRAME)) + 4
+                cy = int(_user32.GetSystemMetrics(SM_CYFRAME)) + 4
+
+            params.rgrc[0].left += cx
+            params.rgrc[0].top += cy
+            params.rgrc[0].right -= cx
+            params.rgrc[0].bottom -= cy
+
+            # With auto-hide on, rcWork equals rcMonitor, and a maximized
+            # window pinned flush to the edge stops the taskbar being summoned.
+            # Leaving one pixel keeps it reachable.
+            edge = self._autohide_taskbar_edge()
+            if edge == ABE_BOTTOM:
+                params.rgrc[0].bottom -= 1
+            elif edge == ABE_TOP:
+                params.rgrc[0].top += 1
+            elif edge == ABE_LEFT:
+                params.rgrc[0].left += 1
+            elif edge == ABE_RIGHT:
+                params.rgrc[0].right -= 1
+
+        return True, 0
+
+    def _autohide_taskbar_edge(self) -> int:
+        """Which edge an auto-hiding taskbar is on, or -1.
+
+        Untested on this machine -- ABM_GETSTATE reports 0 here, so the
+        auto-hide branch above has never actually run.
+        """
+        if not _has(_shell32, "SHAppBarMessage"):
+            return -1
+        try:
+            data = APPBARDATA()
+            data.cbSize = ctypes.sizeof(APPBARDATA)
+            state = _shell32.SHAppBarMessage(ABM_GETSTATE, ctypes.byref(data))
+            if not (int(state) & ABS_AUTOHIDE):
+                return -1
+
+            probe = APPBARDATA()
+            probe.cbSize = ctypes.sizeof(APPBARDATA)
+            if not _shell32.SHAppBarMessage(ABM_GETTASKBARPOS, ctypes.byref(probe)):
+                return ABE_BOTTOM
+            return int(probe.uEdge)
+        except Exception:
+            return -1
 
     # -- acrylic -----------------------------------------------------------
 
