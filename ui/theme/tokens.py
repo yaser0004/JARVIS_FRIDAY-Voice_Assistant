@@ -138,20 +138,42 @@ class OrbProfile:
 
 @dataclass(frozen=True)
 class Metrics:
-    radius_sm: int = 6
-    radius_md: int = 10
-    radius_lg: int = 14
+    """One geometry scale, held everywhere.
+
+    The old values were 6/10/14 plus a one-off 20 on the composer, which is
+    what made the surfaces look assembled rather than designed.
+    """
+
+    radius_sm: int = 4
+    radius_md: int = 8
+    radius_lg: int = 12
+    radius_xl: int = 16      # the composer, the only genuinely large surface
     radius_pill: int = 999
 
     space_xs: int = 4
     space_sm: int = 8
     space_md: int = 12
-    space_lg: int = 18
-    space_xl: int = 26
+    space_lg: int = 16
+    space_xl: int = 24
+    space_2xl: int = 32
 
     border_w: int = 1
-    control_h: int = 34
-    icon: int = 18
+    control_h: int = 32
+    icon: int = 16
+
+    # -- window backdrop ----------------------------------------------------
+    # `acrylic_alpha` is the tint alpha to use once the DWM acrylic backdrop
+    # is confirmed live. `backdrop_alpha` is the value actually painted, and
+    # it stays fully opaque until the native chrome proves blur is active --
+    # on Linux, when the window is merely translucent with nothing blurring
+    # behind it, a 70%-opaque window over a sharp desktop looks broken.
+    # Read it from the chrome's signal, never straight off this dataclass.
+    acrylic_alpha: int = 178
+    backdrop_alpha: int = 255
+
+    # 0 on Windows 10, where the corner-rounding API does not exist and the
+    # acrylic backdrop ignores SetWindowRgn. Raised when attr 33 succeeds.
+    window_radius: int = 0
 
 
 @dataclass(frozen=True)

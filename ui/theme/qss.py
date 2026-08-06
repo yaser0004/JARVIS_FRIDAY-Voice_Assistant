@@ -83,7 +83,12 @@ def build_qss(theme: Theme, asset_urls: dict[str, str] | None = None) -> str:
     field_bg_focus = css(mix(c.surface_alt, c.accent, 0.10))
     disabled_text = css(c.text_faint)
     hover = css(c.surface_hi)
-    pressed = css(with_alpha(c.accent, 62))
+    # Neutral, and derived from `text` so it inverts with the theme for free:
+    # near-white over dark, near-black over light. This is the generic pressed
+    # state for quiet controls; the rules that genuinely want an accent press
+    # (primary, send, toggles) set it themselves rather than making everything
+    # else inherit a tint.
+    pressed = css(with_alpha(c.text, 34))
     sel_bg = css(with_alpha(c.accent, 70))
     track = css(with_alpha(c.text_faint, 60))
 
@@ -693,9 +698,12 @@ QWidget#chatContainer {{
     background: transparent;
 }}
 
+/* Neutral, not accent-tinted. The user's turn is the one surface that
+   repeats down the whole transcript, so tinting it painted the entire
+   conversation gold. It lifts by luminance instead. */
 QFrame#userTurn {{
-    background: {css(with_alpha(mix(c.surface_alt, c.accent, 0.14), 226))};
-    border: {m.border_w}px solid {css(with_alpha(c.accent, 40))};
+    background: {css(c.surface_alt)};
+    border: {m.border_w}px solid {css(c.border)};
     border-radius: {m.radius_lg}px;
 }}
 
@@ -705,7 +713,7 @@ QFrame#assistantTurn {{
 }}
 
 QLabel#turnRole {{
-    color: {css(c.accent_dim)};
+    color: {css(c.text_dim)};
     background: transparent;
 }}
 
@@ -732,11 +740,14 @@ QLabel#turnImage {{
 QFrame#composer {{
     background: {css(c.surface_alt)};
     border: {m.border_w}px solid {css(c.border)};
-    border-radius: {m.radius_lg + 6}px;
+    border-radius: {m.radius_xl}px;
 }}
 
+/* The composer is where the accent belongs: it is the one focused element
+   on the screen, and spending the accent here is what lets every other
+   border stay neutral. */
 QFrame#composer:focus-within {{
-    border: {m.border_w}px solid {css(c.border_strong)};
+    border: {m.border_w}px solid {css(with_alpha(c.accent, 150))};
 }}
 
 QLineEdit#composerInput {{

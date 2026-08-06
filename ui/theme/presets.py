@@ -1,7 +1,29 @@
 """Built-in themes.
 
-JARVIS and FRIDAY are the persona themes. Monochrome and Daylight are
+JARVIS and FRIDAY are the persona themes. Monochrome and Light are
 persona-neutral alternatives for users who do not want the film palette.
+
+Three rules hold across every preset, and they are what separates this from
+the previous palette:
+
+1. Borders are NEUTRAL. They used to be `accent@44`, which put a faintly
+   glowing gold or cyan edge on every panel in the app. A tinted hairline on
+   every surface is the single most recognisable sci-fi-HUD signature, and it
+   is the reason the interface read as a prop rather than a product.
+2. Elevation is NEUTRAL. `surface`/`surface_alt`/`surface_hi` are white (or
+   black, on light) at low alpha, so panels lift by luminance rather than by
+   hue. This is also what lets them sit over the acrylic backdrop without
+   fighting the wallpaper behind it.
+3. Accent is spent on ONE thing per screen -- focus, the send button, an
+   active toggle, the state dot. Everywhere else the accent's only job is to
+   tell JARVIS from FRIDAY.
+
+A consequence of (1)-(3) worth stating: the presets now differ almost solely
+by accent. That is deliberate. The persona should change the app's signature
+colour, not repaint every surface in the window.
+
+`glow` survives on the Palette because OrbProfile consumers read it; nothing
+in the stylesheet touches it.
 """
 
 from __future__ import annotations
@@ -17,6 +39,40 @@ def _c(value: str, alpha: int = 255) -> QColor:
     return color
 
 
+def _w(alpha: int) -> QColor:
+    """White at `alpha` -- neutral elevation for the dark themes."""
+    return QColor(255, 255, 255, alpha)
+
+
+def _k(alpha: int) -> QColor:
+    """Black at `alpha` -- neutral elevation for the light theme."""
+    return QColor(0, 0, 0, alpha)
+
+
+def _dark_palette(accent: QColor, accent_dim: QColor, accent_hot: QColor,
+                  glow: QColor) -> Palette:
+    """The shared neutral dark ground. Only the accent family varies."""
+    return Palette(
+        bg=_c("#101014"),          # was #04070b: pure-black + neon was the tell
+        surface=_w(12),            # panels lift by luminance, not by hue
+        surface_alt=_w(18),        # fields, cards, the user's turn
+        surface_hi=_w(28),         # hover
+        border=_w(22),             # neutral hairline, never accent-tinted
+        border_strong=_w(40),
+        text=_c("#f4f4f6"),
+        text_dim=_c("#a6a6b0"),
+        text_faint=_c("#6f6f7a"),
+        accent=accent,
+        accent_dim=accent_dim,
+        accent_hot=accent_hot,
+        glow=glow,
+        ok=_c("#6ccb5f"),
+        warn=_c("#f7c948"),
+        danger=_c("#e8505f"),
+        is_dark=True,
+    )
+
+
 # ---------------------------------------------------------------------------
 # JARVIS
 #
@@ -24,28 +80,15 @@ def _c(value: str, alpha: int = 255) -> QColor:
 # statelier motion than FRIDAY.
 # ---------------------------------------------------------------------------
 
-_JARVIS_ACCENT = _c("#ffb43c")
+_JARVIS_ACCENT = _c("#f0a531")   # warmer and less neon than the old #ffb43c
 
 JARVIS = Theme(
     name="JARVIS",
-    palette=Palette(
-        bg=_c("#05070a"),
-        surface=_c("#0d0f13", 236),
-        surface_alt=_c("#14161b", 242),
-        surface_hi=with_alpha(_JARVIS_ACCENT, 26),
-        border=with_alpha(_JARVIS_ACCENT, 44),
-        border_strong=with_alpha(_JARVIS_ACCENT, 116),
-        text=_c("#ede6d8"),
-        text_dim=_c("#9c9384"),
-        text_faint=_c("#5f5a50"),
+    palette=_dark_palette(
         accent=_JARVIS_ACCENT,
         accent_dim=_c("#c98b24"),
-        accent_hot=_c("#ffe9b8"),
+        accent_hot=_c("#ffdb9b"),
         glow=_c("#ff8a18"),
-        ok=_c("#48d18a"),
-        warn=_c("#ffc24a"),
-        danger=_c("#ff4d5e"),
-        is_dark=True,
     ),
     orb=OrbProfile(
         core=_c("#fff4d6"),
@@ -72,28 +115,15 @@ JARVIS = Theme(
 # system, differentiated by a cool palette and a tighter, faster profile.
 # ---------------------------------------------------------------------------
 
-_FRIDAY_ACCENT = _c("#38cfff")
+_FRIDAY_ACCENT = _c("#3aa0ff")   # Fluent blue, not the old neon cyan #38cfff
 
 FRIDAY = Theme(
     name="FRIDAY",
-    palette=Palette(
-        bg=_c("#04070b"),
-        surface=_c("#0b1016", 236),
-        surface_alt=_c("#10171f", 242),
-        surface_hi=with_alpha(_FRIDAY_ACCENT, 26),
-        border=with_alpha(_FRIDAY_ACCENT, 44),
-        border_strong=with_alpha(_FRIDAY_ACCENT, 116),
-        text=_c("#dceef7"),
-        text_dim=_c("#7f98a8"),
-        text_faint=_c("#4c5f6c"),
+    palette=_dark_palette(
         accent=_FRIDAY_ACCENT,
-        accent_dim=_c("#1e93b8"),
-        accent_hot=_c("#d6f6ff"),
+        accent_dim=_c("#1f6fbe"),
+        accent_hot=_c("#cfe6ff"),
         glow=_c("#0a84ff"),
-        ok=_c("#3adfa0"),
-        warn=_c("#ffc24a"),
-        danger=_c("#ff5470"),
-        is_dark=True,
     ),
     orb=OrbProfile(
         core=_c("#eaf9ff"),
@@ -117,28 +147,15 @@ FRIDAY = Theme(
 # Monochrome
 # ---------------------------------------------------------------------------
 
-_MONO_ACCENT = _c("#c8d2dc")
+_MONO_ACCENT = _c("#c9ccd4")
 
 MONOCHROME = Theme(
     name="Monochrome",
-    palette=Palette(
-        bg=_c("#08090b"),
-        surface=_c("#101216", 236),
-        surface_alt=_c("#171a1f", 242),
-        surface_hi=with_alpha(_MONO_ACCENT, 22),
-        border=with_alpha(_MONO_ACCENT, 40),
-        border_strong=with_alpha(_MONO_ACCENT, 104),
-        text=_c("#e4e8ec"),
-        text_dim=_c("#8d959d"),
-        text_faint=_c("#565c63"),
+    palette=_dark_palette(
         accent=_MONO_ACCENT,
         accent_dim=_c("#8c949c"),
         accent_hot=_c("#ffffff"),
         glow=_c("#9fb0bf"),
-        ok=_c("#6fd39b"),
-        warn=_c("#e3c169"),
-        danger=_c("#e8697a"),
-        is_dark=True,
     ),
     orb=OrbProfile(
         core=_c("#ffffff"),
@@ -159,34 +176,40 @@ MONOCHROME = Theme(
 
 
 # ---------------------------------------------------------------------------
-# Daylight
+# Light
 #
-# The orb stays luminous here; OrbWidget paints a dark viewport disc behind
-# it when `palette.is_dark` is False, which is why these orb colors are not
-# darkened for the light surface.
+# Was "Daylight", and was effectively a reskin of FRIDAY -- it reused FRIDAY's
+# luminous cyan orb wholesale, which is what made it read as an afterthought.
+# The palette is now a real Fluent light ground with its own accent and its
+# own semantic colours, all darkened enough to hold contrast on white.
+#
+# The orb profile is still the inherited luminous one: OrbWidget paints a dark
+# viewport disc behind the orb when `palette.is_dark` is False. Giving light a
+# properly dark orb profile means reconciling that disc first, which is a
+# separate change.
 # ---------------------------------------------------------------------------
 
-_LIGHT_ACCENT = _c("#0a6ec4")
+_LIGHT_ACCENT = _c("#0f6cbd")
 
-DAYLIGHT = Theme(
-    name="Daylight",
+LIGHT = Theme(
+    name="Light",
     palette=Palette(
-        bg=_c("#eef1f5"),
-        surface=_c("#ffffff", 250),
-        surface_alt=_c("#e7ecf2", 250),
-        surface_hi=with_alpha(_LIGHT_ACCENT, 26),
-        border=with_alpha(_c("#0d1b2a"), 40),
-        border_strong=with_alpha(_LIGHT_ACCENT, 130),
-        text=_c("#101418"),
-        text_dim=_c("#525d69"),
-        text_faint=_c("#8a949e"),
+        bg=_c("#f3f3f3"),
+        surface=_c("#ffffff", 180),
+        surface_alt=_c("#ffffff", 230),
+        surface_hi=_k(10),
+        border=_k(24),
+        border_strong=_k(46),
+        text=_c("#1b1b1f"),
+        text_dim=_c("#5c5c66"),
+        text_faint=_c("#8b8b95"),
         accent=_LIGHT_ACCENT,
-        accent_dim=_c("#0d5698"),
-        accent_hot=_c("#3ea1ee"),
-        glow=_c("#0a6ec4"),
-        ok=_c("#1a8f5f"),
-        warn=_c("#a5730a"),
-        danger=_c("#c62b42"),
+        accent_dim=_c("#0b4f8c"),
+        accent_hot=_c("#2b88d8"),
+        glow=_c("#0f6cbd"),
+        ok=_c("#0f7b34"),
+        warn=_c("#9d5d00"),
+        danger=_c("#c4314b"),
         is_dark=False,
     ),
     orb=OrbProfile(
@@ -207,20 +230,28 @@ DAYLIGHT = Theme(
 )
 
 
+# "daylight" is the old key for LIGHT. It stays resolvable because it may
+# already be sitting in a user's ui_settings.json, but it is absent from
+# PRESET_LABELS so the Appearance page offers only the current name.
 PRESETS: dict[str, Theme] = {
     "jarvis": JARVIS,
     "friday": FRIDAY,
     "monochrome": MONOCHROME,
-    "daylight": DAYLIGHT,
+    "light": LIGHT,
+    "daylight": LIGHT,
 }
 
-# Human-readable labels for the Appearance settings page.
+# Human-readable labels for the Appearance settings page. Order is the order
+# the page presents them in.
 PRESET_LABELS: dict[str, str] = {
     "jarvis": "JARVIS (gold)",
-    "friday": "FRIDAY (cyan)",
+    "friday": "FRIDAY (blue)",
     "monochrome": "Monochrome",
-    "daylight": "Daylight",
+    "light": "Light",
 }
+
+# Backwards-compatible alias: DAYLIGHT was the public name of this theme.
+DAYLIGHT = LIGHT
 
 # Which preset a persona selects when "theme follows persona" is enabled.
 PERSONA_PRESETS: dict[str, str] = {

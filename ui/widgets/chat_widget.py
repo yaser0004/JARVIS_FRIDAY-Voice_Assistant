@@ -15,7 +15,7 @@ from __future__ import annotations
 from typing import Optional
 
 from PyQt6.QtCore import QPropertyAnimation, QSize, Qt, QTimer
-from PyQt6.QtGui import QFont, QPixmap, QResizeEvent
+from PyQt6.QtGui import QFont, QFontMetrics, QPixmap, QResizeEvent
 from PyQt6.QtWidgets import (
     QFrame,
     QGraphicsOpacityEffect,
@@ -106,7 +106,13 @@ class MessageTurn(QFrame):
         self.intent_label.setVisible(bool(intent) and not self.is_user)
         body.addWidget(self.intent_label)
 
-        self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
+        # The user's turn hugs its text; the assistant's fills the measure.
+        # Both used to be setFixedWidth, so a three-word question got a box as
+        # wide as a paragraph and the transcript read as a form, not a chat.
+        self.setSizePolicy(
+            QSizePolicy.Policy.Maximum if self.is_user else QSizePolicy.Policy.Preferred,
+            QSizePolicy.Policy.Maximum,
+        )
         self._target_width = 0
         self.set_target_width(320)
 
@@ -124,9 +130,22 @@ class MessageTurn(QFrame):
         if target == self._target_width:
             return
         self._target_width = target
-        self.setFixedWidth(target)
         inset = 28 if self.is_user else 4
-        self.message_label.setFixedWidth(max(120, target - inset))
+        text_width = max(120, target - inset)
+
+        if self.is_user:
+            # Hug the text. maximumWidth alone is not enough: a word-wrapped
+            # QLabel reports its *minimum* size hint, so the layout starves it
+            # and "launch notepad please" wraps into a narrow column. Measure
+            # the unwrapped run and clamp it to the measure instead.
+            metrics = QFontMetrics(self.message_label.font())
+            natural = metrics.horizontalAdvance(self.message_label.text())
+            fitted = max(120, min(natural + 2, text_width))
+            self.message_label.setFixedWidth(fitted)
+            self.setMaximumWidth(fitted + inset)
+        else:
+            self.setFixedWidth(target)
+            self.message_label.setFixedWidth(text_width)
         self.updateGeometry()
 
 
