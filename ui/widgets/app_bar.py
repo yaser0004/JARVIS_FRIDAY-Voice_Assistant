@@ -69,7 +69,7 @@ class AppBar(QWidget):
 
         self.brand = QLabel("JARVIS", self)
         self.brand.setObjectName("brand")
-        self.brand.setFont(display_font(12, tracking=13.0))
+        self.brand.setFont(display_font(13, tracking=7.0))
         row.addWidget(self.brand)
 
         self.dot = StateDot(self)
@@ -77,7 +77,7 @@ class AppBar(QWidget):
 
         self.state_label = QLabel("idle", self)
         self.state_label.setObjectName("caption")
-        self.state_label.setFont(mono_font(9, tracking=6.0))
+        self.state_label.setFont(mono_font(10))
         row.addWidget(self.state_label)
 
         row.addStretch(1)
@@ -121,7 +121,7 @@ class AppBar(QWidget):
         active = theme()
         self.mark.setPixmap(pixmap("brand", active.palette.accent, 20,
                                    self.devicePixelRatioF()))
-        self.brand.setFont(display_font(12, tracking=13.0))
+        self.brand.setFont(display_font(13, tracking=7.0))
         self.diagnostics_btn.setIcon(icon("search"))
         self.logs_btn.setIcon(icon("logs"))
         self.settings_btn.setIcon(icon("settings"))

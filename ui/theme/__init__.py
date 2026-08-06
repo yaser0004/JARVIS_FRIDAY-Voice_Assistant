@@ -311,7 +311,13 @@ def on_theme_changed(slot: Callable[[], None]) -> None:
 
 
 def display_font(size: int | None = None, *, weight: QFont.Weight = QFont.Weight.DemiBold,
-                 tracking: float = 2.0, caps: bool = False) -> QFont:
+                 tracking: float = 0.0, caps: bool = False) -> QFont:
+    """Headings and the brand wordmark.
+
+    Tracking defaults to 0. Wide-tracked caps on every section title is the
+    single strongest "AI dashboard" tell, so letter spacing is now opt-in and
+    reserved for the wordmark, where it reads as a logotype rather than a HUD.
+    """
     t = manager().theme.type
     return _build_font(t.display, size or t.size_md, weight=weight,
                        letter_spacing=tracking, caps=caps)

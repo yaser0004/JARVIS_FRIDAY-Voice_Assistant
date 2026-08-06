@@ -14,6 +14,7 @@ from __future__ import annotations
 from collections import deque
 
 from PyQt6.QtCore import QEasingCurve, QPropertyAnimation, Qt, pyqtProperty
+from PyQt6.QtGui import QFont
 from PyQt6.QtWidgets import (
     QComboBox,
     QFrame,
@@ -83,7 +84,7 @@ class DiagnosticsPanel(QFrame):
 
         title = QLabel("Diagnostics")
         title.setObjectName("heading")
-        title.setFont(display_font(13, tracking=4.0))
+        title.setFont(display_font(15))
         root.addWidget(title)
 
         root.addWidget(self._section("System"))
@@ -153,7 +154,7 @@ class DiagnosticsPanel(QFrame):
     def _section(self, text: str) -> QLabel:
         label = QLabel(text.upper())
         label.setObjectName("sectionTitle")
-        label.setFont(mono_font(8, tracking=14.0))
+        label.setFont(display_font(11, weight=QFont.Weight.DemiBold))
         return label
 
     def _format_intent_catalog(self) -> str:

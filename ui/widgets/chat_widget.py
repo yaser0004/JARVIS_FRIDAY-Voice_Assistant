@@ -15,7 +15,7 @@ from __future__ import annotations
 from typing import Optional
 
 from PyQt6.QtCore import QPropertyAnimation, QSize, Qt, QTimer
-from PyQt6.QtGui import QPixmap, QResizeEvent
+from PyQt6.QtGui import QFont, QPixmap, QResizeEvent
 from PyQt6.QtWidgets import (
     QFrame,
     QGraphicsOpacityEffect,
@@ -68,7 +68,7 @@ class MessageTurn(QFrame):
         if not self.is_user:
             self.role_label = QLabel(str(assistant_name or "JARVIS").strip().upper())
             self.role_label.setObjectName("turnRole")
-            self.role_label.setFont(mono_font(9, tracking=12.0))
+            self.role_label.setFont(body_font(10, weight=QFont.Weight.DemiBold))
             body.addWidget(self.role_label)
 
         # Attached image, shown in the turn that actually carried it.

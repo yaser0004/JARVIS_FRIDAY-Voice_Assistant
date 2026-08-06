@@ -167,8 +167,8 @@ QLabel#heading {{
 QLabel#sectionTitle {{
     font-family: "{t.display}";
     font-size: {t.size_sm}pt;
+    font-weight: 600;
     color: {css(c.text_dim)};
-    letter-spacing: 1px;
 }}
 
 QLabel#caption, QLabel#hint {{

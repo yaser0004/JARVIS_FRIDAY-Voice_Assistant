@@ -19,6 +19,7 @@ from PyQt6.QtCore import (
     Qt,
     pyqtProperty,
 )
+from PyQt6.QtGui import QFont
 from PyQt6.QtWidgets import (
     QGraphicsOpacityEffect,
     QHBoxLayout,
@@ -76,7 +77,7 @@ class OrbStage(QWidget):
         self.greeting = QLabel("", self)
         self.greeting.setObjectName("greeting")
         self.greeting.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.greeting.setFont(display_font(19, tracking=3.0))
+        self.greeting.setFont(display_font(22, weight=QFont.Weight.Medium))
         root.addWidget(self.greeting)
 
         self._greeting_effect = QGraphicsOpacityEffect(self.greeting)
@@ -142,4 +143,4 @@ class OrbStage(QWidget):
         self.waves.set_state(normalized)
 
     def _apply_fonts(self) -> None:
-        self.greeting.setFont(display_font(19, tracking=3.0))
+        self.greeting.setFont(display_font(22, weight=QFont.Weight.Medium))

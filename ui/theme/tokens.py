@@ -156,27 +156,34 @@ class Metrics:
 
 @dataclass(frozen=True)
 class Typography:
-    """Resolved font families. Populated at startup from what is installed."""
+    """Resolved font families. Populated at startup from what is installed.
 
-    display: str = "Bahnschrift"
-    body: str = "Segoe UI"
-    mono: str = "Cascadia Mono"
+    Display and body are deliberately the *same* family. The previous split
+    (condensed Bahnschrift over Segoe UI) is what made section titles read as
+    an instrument panel; one family at two weights reads as a designed system.
+    IBM Plex ships in assets/fonts, so this is bundled rather than hoping the
+    machine happens to have the face installed.
+    """
 
-    size_xs: int = 9
-    size_sm: int = 10
-    size_md: int = 11
-    size_lg: int = 13
-    size_xl: int = 17
+    display: str = "IBM Plex Sans"
+    body: str = "IBM Plex Sans"
+    mono: str = "IBM Plex Mono"
+
+    size_xs: int = 10
+    size_sm: int = 11
+    size_md: int = 12
+    size_lg: int = 14
+    size_xl: int = 20
 
     # Preference order, first installed family wins. Resolved by ui.theme.fonts.
     display_stack: Sequence[str] = field(
-        default_factory=lambda: ("Bahnschrift", "Segoe UI Semibold", "Segoe UI", "Arial")
+        default_factory=lambda: ("IBM Plex Sans", "Segoe UI Semibold", "Segoe UI", "Arial")
     )
     body_stack: Sequence[str] = field(
-        default_factory=lambda: ("Segoe UI", "Bahnschrift", "Arial")
+        default_factory=lambda: ("IBM Plex Sans", "Segoe UI", "Arial")
     )
     mono_stack: Sequence[str] = field(
-        default_factory=lambda: ("Cascadia Mono", "Consolas", "Courier New")
+        default_factory=lambda: ("IBM Plex Mono", "Cascadia Mono", "Consolas", "Courier New")
     )
 
 

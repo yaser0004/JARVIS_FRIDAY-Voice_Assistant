@@ -52,7 +52,7 @@ class MetricsStatusBar(QWidget):
 
         caption = QLabel(name)
         caption.setObjectName("readout")
-        caption.setFont(mono_font(9, tracking=8.0))
+        caption.setFont(mono_font(10))
         caption.setFixedWidth(34)
 
         bar = QProgressBar()
