@@ -8,7 +8,7 @@ from pathlib import Path
 import numpy as np
 import sounddevice as sd
 
-from PyQt6.QtCore import QRectF, QSize, QTimer, Qt, pyqtSignal
+from PyQt6.QtCore import QEvent, QRectF, QSize, QTimer, Qt, pyqtSignal
 from PyQt6.QtGui import QAction, QMouseEvent, QPainter, QPen, QPixmap
 from PyQt6.QtWidgets import (
     QCheckBox,
@@ -306,6 +306,9 @@ class JarvisMainWindow(QMainWindow):
         self.app_bar.settings_requested.connect(self._open_settings)
         self.app_bar.logs_requested.connect(self._open_logs)
         self.app_bar.diagnostics_toggled.connect(self.diagnostics.set_open)
+        self.app_bar.minimize_requested.connect(self.showMinimized)
+        self.app_bar.maximize_requested.connect(self._chrome.toggle_maximize)
+        self.app_bar.close_requested.connect(self.close)
         self.diagnostics.model_selector.currentTextChanged.connect(self._on_intent_model_changed)
         self._apply_icons()
         theme_manager().changed.connect(self._on_theme_changed)
@@ -1803,12 +1806,20 @@ class JarvisMainWindow(QMainWindow):
             self._trace("chrome_disabled_by_settings")
             return
         try:
+            self._chrome.set_drag_widget(self.app_bar)
             if self._chrome.install():
+                self.app_bar.set_window_controls_visible(True)
+                self.app_bar.set_maximized(self.isMaximized())
                 self._trace("chrome_installed")
             else:
                 self._trace("chrome_unavailable")
         except Exception as exc:
             trace_exception("ui.main_window", exc)
+
+    def changeEvent(self, event) -> None:
+        super().changeEvent(event)
+        if event.type() == QEvent.Type.WindowStateChange:
+            self.app_bar.set_maximized(self.isMaximized())
 
     def nativeEvent(self, eventType, message):
         """Forward to the chrome, normalising the result.

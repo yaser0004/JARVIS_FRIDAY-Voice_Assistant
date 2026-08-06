@@ -338,18 +338,38 @@ QToolButton:disabled {{
     border: {m.border_w}px solid {css(c.border, 22)};
 }}
 
-QToolButton#flat, QToolButton#windowButton {{
+QToolButton#flat {{
     background: transparent;
     border: none;
     border-radius: {m.radius_sm}px;
 }}
 
-QToolButton#flat:hover, QToolButton#windowButton:hover {{
+QToolButton#flat:hover {{
     background: {hover};
 }}
 
+/* Window buttons follow the OS convention rather than the app's: square, no
+   radius, no gaps, so the close button occupies the true window corner. */
+QToolButton#windowButton, QToolButton#windowClose {{
+    background: transparent;
+    border: none;
+    border-radius: 0;
+}}
+
+QToolButton#windowButton:hover {{
+    background: {hover};
+}}
+
+QToolButton#windowButton:pressed {{
+    background: {pressed};
+}}
+
 QToolButton#windowClose:hover {{
-    background: {css(with_alpha(c.danger, 170))};
+    background: {css(with_alpha(c.danger, 200))};
+}}
+
+QToolButton#windowClose:pressed {{
+    background: {css(with_alpha(c.danger, 140))};
 }}
 
 QToolButton::menu-indicator {{

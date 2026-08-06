@@ -37,7 +37,7 @@ import os
 from ctypes import wintypes
 from typing import Optional
 
-from PyQt6.QtCore import QObject, QTimer, pyqtSignal
+from PyQt6.QtCore import QObject, QPoint, QTimer, pyqtSignal
 from PyQt6.QtWidgets import QWidget
 
 from core.session_logging import trace_event, trace_exception
@@ -348,7 +348,91 @@ class WindowChrome(QObject):
         if msg.message == WM_NCCALCSIZE:
             self._nccalcsize_seen += 1
             return self._on_nccalcsize(msg)
+        if msg.message == WM_NCHITTEST:
+            return self._on_nchittest(msg)
         return None
+
+    # -- WM_NCHITTEST ------------------------------------------------------
+
+    def _on_nchittest(self, msg: MSG) -> Optional[tuple[bool, _MSG_RESULT]]:
+        """Resize zones around the edges, caption over the app bar.
+
+        Returning HTCAPTION and letting DefWindowProc take it from there is
+        what buys drag-to-edge snap, Win+arrow AND double-click-to-maximize
+        without writing a single mouse handler.
+
+        Two traps live here:
+
+        * lParam is in PHYSICAL pixels, while every Qt geometry call is in
+          LOGICAL pixels. At 96 DPI they are identical, so a bug here passes
+          every test on a 100%-scaling machine and breaks at 125% or 150%.
+        * All eight resize zones must be OFF while maximized, or the top 8px
+          of a maximized window becomes a resize strip lying over the app bar
+          and swallowing clicks on the brand and the window buttons.
+        """
+        # Signed 16-bit halves: a window on a second monitor to the left has
+        # negative screen coordinates, and masking without sign-extending
+        # sends the hit test to the wrong edge.
+        x = ctypes.c_short(msg.lParam & 0xFFFF).value
+        y = ctypes.c_short((msg.lParam >> 16) & 0xFFFF).value
+
+        rect = wintypes.RECT()
+        if not (_has(_user32, "GetWindowRect")
+                and _user32.GetWindowRect(wintypes.HWND(msg.hWnd), ctypes.byref(rect))):
+            return None
+
+        zoomed = bool(_has(_user32, "IsZoomed")
+                      and _user32.IsZoomed(wintypes.HWND(msg.hWnd)))
+
+        if not zoomed:
+            border = self.resize_border_px()
+            left = x < rect.left + border
+            right = x >= rect.right - border
+            top = y < rect.top + border
+            bottom = y >= rect.bottom - border
+            code = {
+                (True, False, True, False): HTTOPLEFT,
+                (True, False, False, True): HTBOTTOMLEFT,
+                (False, True, True, False): HTTOPRIGHT,
+                (False, True, False, True): HTBOTTOMRIGHT,
+                (True, False, False, False): HTLEFT,
+                (False, True, False, False): HTRIGHT,
+                (False, False, True, False): HTTOP,
+                (False, False, False, True): HTBOTTOM,
+            }.get((left, right, top, bottom))
+            if code is not None:
+                return True, code
+
+        if self._is_drag_area(x, y):
+            return True, HTCAPTION
+        return None
+
+    def _is_drag_area(self, x: int, y: int) -> bool:
+        """True when the physical point falls on draggable app-bar chrome."""
+        bar = self._drag_widget
+        if bar is None or not bar.isVisible():
+            return False
+
+        # Physical -> logical before handing anything to Qt. See the note in
+        # _on_nchittest; this is the line that breaks at 125% scaling if the
+        # division is dropped.
+        ratio = self._window.devicePixelRatioF() or 1.0
+        local = bar.mapFromGlobal(QPoint(int(round(x / ratio)), int(round(y / ratio))))
+        if not bar.rect().contains(local):
+            return False
+
+        # Walk up from the deepest child. A dynamic property beats an
+        # isinstance check because the bar will keep gaining widgets, and
+        # "draggable" is the right default for decoration.
+        child = bar.childAt(local)
+        while child is not None and child is not bar:
+            if child.property("windowDragExcluded"):
+                return False
+            child = child.parentWidget()
+        return True
+
+    def set_drag_widget(self, widget: QWidget | None) -> None:
+        self._drag_widget = widget
 
     # -- WM_NCCALCSIZE -----------------------------------------------------
 

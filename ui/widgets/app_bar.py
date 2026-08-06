@@ -49,18 +49,29 @@ class StateDot(QWidget):
         painter.drawEllipse(self.rect().adjusted(3, 3, -3, -3))
 
 
+#: Windows convention is a wide, short window button with no gaps between them.
+WINDOW_BUTTON_W = 44
+WINDOW_BUTTON_H = 32
+BAR_HEIGHT = 44
+
+
 class AppBar(QWidget):
     settings_requested = pyqtSignal()
     logs_requested = pyqtSignal()
     diagnostics_toggled = pyqtSignal(bool)
+    minimize_requested = pyqtSignal()
+    maximize_requested = pyqtSignal()
+    close_requested = pyqtSignal()
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
         self.setObjectName("appBar")
-        self.setFixedHeight(46)
+        self.setFixedHeight(BAR_HEIGHT)
 
         row = QHBoxLayout(self)
-        row.setContentsMargins(14, 0, 10, 0)
+        # No right margin: the close button must reach the window edge, which
+        # is what makes the corner a real Fitts's-law target.
+        row.setContentsMargins(14, 0, 0, 0)
         row.setSpacing(10)
 
         self.mark = QLabel(self)
@@ -107,15 +118,69 @@ class AppBar(QWidget):
         self.settings_btn.clicked.connect(self.settings_requested.emit)
         row.addWidget(self.settings_btn)
 
-        # Reserved for the window buttons added in the frameless stage.
+        # Window buttons. Hidden until the native chrome actually installs --
+        # with an OS titlebar still present these would be a second, redundant
+        # set of controls.
         self.window_controls = QWidget(self)
+        self.window_controls.setProperty("windowDragExcluded", True)
         controls = QHBoxLayout(self.window_controls)
-        controls.setContentsMargins(6, 0, 0, 0)
-        controls.setSpacing(2)
+        controls.setContentsMargins(8, 0, 0, 0)
+        controls.setSpacing(0)
+
+        self.minimize_btn = QToolButton(self.window_controls)
+        self.minimize_btn.setObjectName("windowButton")
+        self.minimize_btn.setToolTip("Minimize")
+        self.minimize_btn.setFixedSize(WINDOW_BUTTON_W, WINDOW_BUTTON_H)
+        self.minimize_btn.clicked.connect(self.minimize_requested.emit)
+        controls.addWidget(self.minimize_btn)
+
+        self.maximize_btn = QToolButton(self.window_controls)
+        self.maximize_btn.setObjectName("windowButton")
+        self.maximize_btn.setToolTip("Maximize")
+        self.maximize_btn.setFixedSize(WINDOW_BUTTON_W, WINDOW_BUTTON_H)
+        self.maximize_btn.clicked.connect(self.maximize_requested.emit)
+        controls.addWidget(self.maximize_btn)
+
+        self.close_btn = QToolButton(self.window_controls)
+        self.close_btn.setObjectName("windowClose")
+        self.close_btn.setToolTip("Close")
+        self.close_btn.setFixedSize(WINDOW_BUTTON_W, WINDOW_BUTTON_H)
+        self.close_btn.clicked.connect(self.close_requested.emit)
+        controls.addWidget(self.close_btn)
+
+        self.window_controls.setVisible(False)
         row.addWidget(self.window_controls)
 
+        # The bar is the window's drag handle, so anything clickable on it has
+        # to opt out or it swallows the drag. Property rather than isinstance:
+        # the bar will keep gaining widgets and draggable is the right default.
+        for button in (self.diagnostics_btn, self.logs_btn, self.settings_btn):
+            button.setProperty("windowDragExcluded", True)
+
+        self._maximized = False
         self._apply_theme()
         theme_manager().changed.connect(self._apply_theme)
+
+    # -- window controls ---------------------------------------------------
+
+    def set_window_controls_visible(self, visible: bool) -> None:
+        """Shown only when the native frameless chrome actually installed."""
+        visible = bool(visible)
+        self.window_controls.setVisible(visible)
+        # The close button has to reach the window edge to be a real corner
+        # target, but with the controls hidden the settings button would end
+        # up flush against it instead.
+        layout = self.layout()
+        if layout is not None:
+            layout.setContentsMargins(14, 0, 0 if visible else 10, 0)
+
+    def set_maximized(self, maximized: bool) -> None:
+        maximized = bool(maximized)
+        if maximized == self._maximized:
+            return
+        self._maximized = maximized
+        self.maximize_btn.setToolTip("Restore" if maximized else "Maximize")
+        self.maximize_btn.setIcon(icon("restore" if maximized else "maximize"))
 
     def _apply_theme(self) -> None:
         active = theme()
@@ -127,6 +192,12 @@ class AppBar(QWidget):
         self.settings_btn.setIcon(icon("settings"))
         for button in (self.diagnostics_btn, self.logs_btn, self.settings_btn):
             button.setIconSize(QSize(17, 17))
+
+        self.minimize_btn.setIcon(icon("minimize"))
+        self.maximize_btn.setIcon(icon("restore" if self._maximized else "maximize"))
+        self.close_btn.setIcon(icon("close"))
+        for button in (self.minimize_btn, self.maximize_btn, self.close_btn):
+            button.setIconSize(QSize(11, 11))
         self.dot.update()
 
     def set_brand_name(self, name: str) -> None:
