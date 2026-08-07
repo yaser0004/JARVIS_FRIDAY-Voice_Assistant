@@ -21,7 +21,7 @@ from pathlib import Path
 from typing import Callable, Iterable
 
 from PyQt6.QtCore import QPointF, QRectF, QSize, Qt
-from PyQt6.QtGui import QColor, QIcon, QPainter, QPainterPath, QPen, QPixmap, QTransform
+from PyQt6.QtGui import QColor, QIcon, QPainter, QPainterPath, QPen, QPixmap
 
 from core.config import APPDATA_DIR
 
@@ -262,18 +262,29 @@ def _refresh() -> Drawing:
 
 
 def _brand() -> Drawing:
-    """The orb mark: a bright core inside circumscribing data rings.
+    """The orb mark: a core inside a ring of radial ticks.
 
-    The rings are tilted deliberately. Axis-aligned, the mark collapses into
-    a passable eye at 16px, which is the size the tray uses most.
+    The static twin of the live orb, so the app bar and the tray read as the
+    same object as the thing above the composer. It replaced a pair of tilted
+    ellipses that echoed the old filament sphere.
+
+    Twelve ticks, not the orb's forty-eight: at 16px -- the size the tray uses
+    most -- anything denser fills in solid and the mark becomes a blob.
     """
-    outer = _ellipse(12, 12, 9.6)
-    ring_a = QPainterPath(_ellipse(12, 12, 9.6, 3.6))
-    ring_b = QPainterPath(_ellipse(12, 12, 9.6, 3.6))
+    ticks: list[QPainterPath] = []
+    inner, outer = 6.4, 9.4
+    for i in range(12):
+        angle = math.radians(i * 30.0)
+        cos_a, sin_a = math.cos(angle), math.sin(angle)
+        # Alternating lengths give the ring a rhythm that survives being
+        # scaled down, where uniform ticks read as a dashed circle.
+        reach = outer if i % 2 == 0 else outer - 1.5
+        path = QPainterPath()
+        path.moveTo(12 + cos_a * inner, 12 + sin_a * inner)
+        path.lineTo(12 + cos_a * reach, 12 + sin_a * reach)
+        ticks.append(path)
 
-    tilt_a = QTransform().translate(12, 12).rotate(-26).translate(-12, -12)
-    tilt_b = QTransform().translate(12, 12).rotate(30).translate(-12, -12)
-    return [outer, tilt_a.map(ring_a), tilt_b.map(ring_b)], [_ellipse(12, 12, 2.9)]
+    return ticks, [_ellipse(12, 12, 3.4)]
 
 
 _REGISTRY: dict[str, Drawer] = {

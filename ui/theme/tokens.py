@@ -114,26 +114,24 @@ class Palette:
 class OrbProfile:
     """Identity of the orb for one persona.
 
-    Structure follows the Age of Ultron JARVIS hologram: an internal network
-    of connections inside a spherical center, circumscribed by audio-reactive
-    exterior rings of data.
+    A glowing core inside a ring of radial bars whose lengths are the
+    waveform. The persona is carried entirely by colour -- the geometry is
+    identical for all of them.
+
+    This used to describe a projected filament sphere and carried
+    `filaments`, `points`, `rings` and `ticks_per_ring`. Those were read only
+    inside a branch that could never execute, because the orb dropped to a
+    degenerate fallback below 72px and was only ever instantiated at 28px.
     """
 
-    core: QColor
-    filament_a: QColor
-    filament_b: QColor
-    bloom: QColor
-    ring: QColor
+    core: QColor       # the centre
+    wave_a: QColor     # bar gradient, one end
+    wave_b: QColor     # bar gradient, the other end
+    bloom: QColor      # outer glow
+    ring: QColor       # the quiet baseline the bars stand on
 
-    filaments: int = 26
-    points: int = 72       # samples per filament
-    rings: int = 3
-    ticks_per_ring: int = 48
-
-    spin_rate: float = 14.0   # yaw, degrees per second
-    tilt_rate: float = 9.0    # pitch, degrees per second
-    ring_rate: float = 26.0   # ring rotation, degrees per second
-    tape_rate: float = 0.06   # reel-to-reel tick scroll, revolutions per second
+    bars: int = 48
+    spin_rate: float = 26.0   # degrees per second of ring drift
 
 
 @dataclass(frozen=True)

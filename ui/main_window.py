@@ -60,7 +60,6 @@ from ui.theme import (
 )
 from ui.widgets.chat_widget import ChatWidget
 from ui.widgets.orb import OrbWidget
-from ui.widgets.waveform_widget import WaveformWidget
 from speech.wakeword_config import DEFAULT_WAKEWORD_CONFIG, WAKEWORD_CONFIG_PATH
 from vision.screen_capture import ScreenCapture
 from vision.webcam import WebcamCapture
@@ -69,6 +68,10 @@ from vision.webcam import WebcamCapture
 # Comfortable measure for the conversation column and the composer, so text
 # does not run the full width of a maximised window.
 CONTENT_WIDTH = 760
+
+#: The orb above the composer. Large enough to read its state at a glance,
+#: small enough not to crowd the transcript at the minimum window height.
+ORB_SIZE = 76
 
 
 class RoundedContainer(QWidget):
@@ -211,17 +214,13 @@ class JarvisMainWindow(QMainWindow):
         self.diagnostics = DiagnosticsPanel(self.root)
         body.addWidget(self.diagnostics, 0)
 
-        # The orb is a permanent live mark in the app bar, so the column no
-        # longer reflows around a hero element. Spacers centre the empty
-        # state; once a transcript exists the chat takes the stretch instead.
+        # Spacers centre the empty state; once a transcript exists the chat
+        # takes the stretch instead. The orb sits below both, so neither
+        # arrangement moves it.
         column_layout.addStretch(1)
         self._spacer_top = column_layout.count() - 1
 
         self.empty_state = EmptyState(column)
-        # Part of the QA harness contract: window.orb and window.waveform must
-        # keep resolving to real widgets.
-        self.orb = self.app_bar.orb
-        self.waveform = self.empty_state.waves
         column_layout.addWidget(self.empty_state)
 
         self.chat = ChatWidget(column)
@@ -239,6 +238,23 @@ class JarvisMainWindow(QMainWindow):
         self.processing_hint_label.setWordWrap(True)
         self.processing_hint_label.setVisible(False)
         column_layout.addWidget(self.processing_hint_label)
+
+        # The orb sits directly above the composer: present in both the empty
+        # and conversation states, right where attention already is when you
+        # speak or type, and never competing with the transcript for space.
+        self.orb = OrbWidget(column)
+        self.orb.setFixedSize(ORB_SIZE, ORB_SIZE)
+        self.orb.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+        orb_row = QHBoxLayout()
+        orb_row.setContentsMargins(0, 0, 0, 2)
+        orb_row.addStretch(1)
+        orb_row.addWidget(self.orb, 0)
+        orb_row.addStretch(1)
+        column_layout.addLayout(orb_row)
+
+        # The orb is the app's only audio visualiser now, so the QA harness
+        # name for the waveform resolves to it.
+        self.waveform = self.orb
 
         self.composer = Composer(column)
         composer_row = QHBoxLayout()
@@ -530,7 +546,9 @@ class JarvisMainWindow(QMainWindow):
         if value not in self._ANIMATION_INTERVALS:
             value = "auto"
         anim_clock.clock().set_interval(self._ANIMATION_INTERVALS[value])
-        self.app_bar.set_static_mark(value == "minimal")
+        # A still ring is perfectly readable, so minimal stops animating
+        # rather than hiding the orb.
+        self.orb.set_static(value == "minimal")
         self._trace("animation_quality_applied", quality=value)
 
     # -- geometry persistence ---------------------------------------------
@@ -666,7 +684,7 @@ class JarvisMainWindow(QMainWindow):
     def _on_state_changed(self, state: str) -> None:
         self._trace("state_changed", state=state)
         self.app_bar.set_state(state)
-        self.empty_state.set_state(state)
+        self.orb.set_state(state)
 
     def _on_new_message(self, role: str, text: str) -> None:
         self._trace("message_rendered", role=role, text_chars=len(str(text or "")))

@@ -34,7 +34,7 @@ from PyQt6.QtWidgets import QApplication
 
 # Budgets in milliseconds.
 DELIVERED_P95_BUDGET = 18.0   # 60 FPS with headroom for one slow frame
-ORB_PAINT_P95_BUDGET = 8.0    # at the default orb size
+ORB_PAINT_P95_BUDGET = 8.0    # at the 64px size the orb ships at
 
 STATES = ["IDLE", "LISTENING", "PROCESSING", "SPEAKING"]
 
@@ -111,8 +111,9 @@ def main() -> int:
         state = STATES[step["i"]]
         step["i"] += 1
         window.orb.set_state(state)
+        # Manual amplitude override: this machine may have no audio input, and
+        # a silent orb would measure a load nobody actually sees.
         window.orb.set_audio_level(0.6 if state in ("LISTENING", "SPEAKING") else 0.0)
-        window.waveform.set_state(state)
         anim_clock.clock().reset_stats()
         QTimer.singleShot(int(args.seconds * 1000), run_state)
 

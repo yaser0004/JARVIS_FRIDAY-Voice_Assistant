@@ -90,20 +90,14 @@ JARVIS = Theme(
         accent_hot=_c("#ffdb9b"),
         glow=_c("#ff8a18"),
     ),
+    # Amber into orange.
     orb=OrbProfile(
-        core=_c("#fff4d6"),
-        filament_a=_c("#ffc24a"),
-        filament_b=_c("#ff8a18"),
-        bloom=_c("#ff6a00"),
-        ring=_c("#ffd98a"),
-        filaments=26,
-        points=72,
-        rings=3,
-        ticks_per_ring=52,
-        spin_rate=13.0,
-        tilt_rate=8.0,
-        ring_rate=24.0,
-        tape_rate=0.05,
+        core=_c("#fff0d0"),
+        wave_a=_c("#ffc24a"),
+        wave_b=_c("#ff6a00"),
+        bloom=_c("#ff8a18"),
+        ring=_c("#ffd0a0"),
+        spin_rate=22.0,
     ),
 )
 
@@ -125,20 +119,16 @@ FRIDAY = Theme(
         accent_hot=_c("#cfe6ff"),
         glow=_c("#0a84ff"),
     ),
+    # Blue into pink. The gradient lives on the orb only -- the UI accent
+    # stays the restrained Fluent blue, because a two-hue gradient reads
+    # beautifully on a small glowing object and badly on buttons.
     orb=OrbProfile(
-        core=_c("#eaf9ff"),
-        filament_a=_c("#4fd8ff"),
-        filament_b=_c("#0a84ff"),
-        bloom=_c("#00a6ff"),
-        ring=_c("#bfefff"),
-        filaments=20,
-        points=72,
-        rings=3,
-        ticks_per_ring=44,
-        spin_rate=17.0,
-        tilt_rate=11.0,
-        ring_rate=33.0,
-        tape_rate=0.08,
+        core=_c("#f6ecff"),
+        wave_a=_c("#5aa8ff"),
+        wave_b=_c("#ff6fd8"),
+        bloom=_c("#b06aff"),
+        ring=_c("#cbb6ff"),
+        spin_rate=30.0,
     ),
 )
 
@@ -159,18 +149,11 @@ MONOCHROME = Theme(
     ),
     orb=OrbProfile(
         core=_c("#ffffff"),
-        filament_a=_c("#d5dde5"),
-        filament_b=_c("#8b98a5"),
+        wave_a=_c("#d5dde5"),
+        wave_b=_c("#8b98a5"),
         bloom=_c("#9fb0bf"),
         ring=_c("#eef2f6"),
-        filaments=23,
-        points=72,
-        rings=3,
-        ticks_per_ring=48,
-        spin_rate=15.0,
-        tilt_rate=9.5,
-        ring_rate=28.0,
-        tape_rate=0.06,
+        spin_rate=26.0,
     ),
 )
 
@@ -217,18 +200,11 @@ LIGHT = Theme(
         # Dark ink on a light page. Drawn with ordinary alpha compositing,
         # so these darken what is behind them rather than adding to it.
         core=_c("#0b3f6e"),
-        filament_a=_c("#1d6fb8"),
-        filament_b=_c("#0a3f70"),
+        wave_a=_c("#1d6fb8"),
+        wave_b=_c("#7a3fa0"),
         bloom=_c("#7fb4e0"),
         ring=_c("#14548f"),
-        filaments=22,
-        points=72,
-        rings=3,
-        ticks_per_ring=46,
-        spin_rate=15.0,
-        tilt_rate=9.5,
-        ring_rate=28.0,
-        tape_rate=0.06,
+        spin_rate=26.0,
     ),
 )
 

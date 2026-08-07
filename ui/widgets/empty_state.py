@@ -1,4 +1,4 @@
-"""The empty state: what fills the window before there is a conversation.
+"""The empty state: the greeting shown before there is a conversation.
 
 Previously this was OrbStage, which owned a large hero orb and animated it
 down into a compact one when the first message arrived. That morph is gone.
@@ -6,8 +6,10 @@ The orb is now a small live mark in the app bar, present at every moment of
 the app's life rather than growing and shrinking, so the main column no
 longer has to reflow around it and the layout is simply stable.
 
-What remains here is a greeting and a quiet waveform, shown on an empty
-conversation and hidden once there is a transcript to read.
+What remains here is a greeting and a hint, shown on an empty conversation and
+hidden once there is a transcript to read. The waveform that used to sit here
+is gone: the orb above the composer is the app's one audio visualiser now, and
+two of them was one too many.
 """
 
 from __future__ import annotations
@@ -16,7 +18,6 @@ from PyQt6.QtCore import QEasingCurve, QPropertyAnimation, Qt
 from PyQt6.QtGui import QFont
 from PyQt6.QtWidgets import (
     QGraphicsOpacityEffect,
-    QHBoxLayout,
     QLabel,
     QSizePolicy,
     QVBoxLayout,
@@ -24,11 +25,6 @@ from PyQt6.QtWidgets import (
 )
 
 from ui.theme import body_font, display_font, manager as theme_manager
-from ui.widgets.waveform_widget import WaveformWidget
-
-
-WAVE_HEIGHT = 54
-WAVE_WIDTH = 320
 
 
 class EmptyState(QWidget):
@@ -56,24 +52,10 @@ class EmptyState(QWidget):
         self.hint.setFont(body_font(12))
         root.addWidget(self.hint)
 
-        # The waves sit at a deliberately narrow measure. Run them full width
-        # and they stop reading as part of the assistant and start reading as
-        # a divider across the window.
-        self.waves = WaveformWidget(self)
-        self.waves.setMinimumHeight(0)
-        self.waves.setFixedHeight(WAVE_HEIGHT)
-        self.waves.setMaximumWidth(WAVE_WIDTH)
-        wave_row = QHBoxLayout()
-        wave_row.setContentsMargins(0, 0, 0, 0)
-        wave_row.addStretch(1)
-        wave_row.addWidget(self.waves)
-        wave_row.addStretch(1)
-        root.addLayout(wave_row)
-
-        # Only the label is faded. A QGraphicsOpacityEffect renders its source
-        # into an offscreen surface that a custom painter never reaches, so
-        # putting one on WaveformWidget -- which paints itself -- would make
-        # it render as nothing at all. The waves are hidden outright instead.
+        # A QGraphicsOpacityEffect renders its source into an offscreen
+        # surface that a custom painter never reaches, so one must never go on
+        # a self-painting widget -- it would render as nothing at all. Only
+        # this plain label carries the effect.
         self._greeting_effect = QGraphicsOpacityEffect(self.greeting)
         self.greeting.setGraphicsEffect(self._greeting_effect)
         self._greeting_effect.setOpacity(1.0)
@@ -92,9 +74,9 @@ class EmptyState(QWidget):
         self.hint.setVisible(bool(hint))
 
     def set_state(self, state: str) -> None:
-        # State is spelled out once, in the app bar. Repeating it here was
-        # redundant chrome.
-        self.waves.set_state(str(state or "IDLE").strip().upper())
+        # Nothing to do: state is carried by the orb above the composer and
+        # spelled out once in the app bar. Kept so callers need not care.
+        return None
 
     def set_active(self, active: bool, animate: bool = True) -> None:
         """Show or hide the empty state as the conversation comes and goes."""

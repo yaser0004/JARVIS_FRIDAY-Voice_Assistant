@@ -54,7 +54,6 @@ __all__ = [
     "manager",
     "theme",
     "palette",
-    "orb_profile",
     "metrics",
     "init_theme",
     "set_preset",
@@ -268,10 +267,6 @@ def theme() -> Theme:
 
 def palette() -> Palette:
     return manager().theme.palette
-
-
-def orb_profile() -> OrbProfile:
-    return manager().theme.orb
 
 
 def metrics() -> Metrics:
